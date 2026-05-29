@@ -1,0 +1,53 @@
+{
+  "rules": {
+    "line_length": {
+      "enabled": true,
+      "max_length": 120
+    },
+    "naming_conventions": {
+      "enabled": true
+    },
+    "unused_imports": {
+      "enabled": true
+    },
+    "method_complexity": {
+      "enabled": true,
+      "max_complexity": 10
+    },
+    "empty_methods": {
+      "enabled": true
+    },
+    "duplicate_code": {
+      "enabled": true,
+      "min_tokens": 50
+    },
+    "exception_handling": {
+      "enabled": true
+    },
+    "magic_numbers": {
+      "enabled": true
+    },
+    "comments_ratio": {
+      "enabled": false,
+      "min_ratio": 0.2
+    },
+    "cyclomatic_complexity": {
+      "enabled": true,
+      "max_complexity": 15
+    }
+  },
+  "auto_fix": {
+    "unused_imports": true,
+    "naming_conventions": false
+  },
+  "exclude_patterns": [
+    "**/test/**",
+    "**/generated/**",
+    "**/target/**"
+  ],
+  "ci_cd": {
+    "fail_on_error": true,
+    "max_warnings": 50,
+    "quality_gate": 0.8
+  }
+}

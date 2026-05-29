@@ -1,0 +1,40 @@
+name: Java Code Quality Check
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install javalang pylint astunparse xmltodict pandas jinja2
+    
+    - name: Run Java code inspection
+      run: |
+        python java_inspector.py src/ --format html --output report.html --ci-cd
+    
+    - name: Upload inspection report
+      uses: actions/upload-artifact@v3
+      with:
+        name: code-quality-report
+        path: report.html
+    
+    - name: Fail on quality issues
+      if: failure()
+      run: |
+        echo "代码质量检查失败，请查看报告修复问题"
+        exit 1

@@ -1,0 +1,23 @@
+{
+  "rules": {
+    "line_length": {
+      "enabled": true,
+      "max_length": 80
+    },
+    "naming_conventions": {
+      "enabled": false
+    },
+    "unused_imports": {
+      "enabled": true
+    },
+    "empty_methods": {
+      "enabled": true
+    },
+    "magic_numbers": {
+      "enabled": true
+    }
+  },
+  "exclude_patterns": [
+    "**/test/**"
+  ]
+}
