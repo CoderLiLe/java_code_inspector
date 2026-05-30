@@ -27,6 +27,7 @@ class InspectionConfig:
                 "alibaba_code_style": {"enabled": True},
                 "alibaba_date": {"enabled": True},
                 "alibaba_comment": {"enabled": True},
+                "alibaba_concurrency": {"enabled": True},
                 "alibaba_exception": {"enabled": True},
                 "alibaba_logging": {"enabled": True},
                 "alibaba_other": {"enabled": True},

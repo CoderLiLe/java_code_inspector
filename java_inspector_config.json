@@ -63,6 +63,9 @@
     "alibaba_comment": {
       "enabled": true
     },
+    "alibaba_concurrency": {
+      "enabled": true
+    },
     "alibaba_exception": {
       "enabled": true
     },
