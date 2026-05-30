@@ -273,6 +273,128 @@ public class GoodExample {
         severe = [i for i in issues if i.severity == Severity.ERROR]
         self.assertEqual(len(severe), 0)
 
+    def test_alibaba_abstract_naming(self):
+        code = 'abstract class MyHandler { abstract void handle(); }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            naming = [i for i in issues if i.rule_id == 'ALIBABA_ABSTRACT_NAMING']
+            self.assertGreaterEqual(len(naming), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_alibaba_enum_naming(self):
+        code = 'enum Color { RED, GREEN }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            enum_issues = [i for i in issues if i.rule_id == 'ALIBABA_ENUM_NAMING']
+            self.assertGreaterEqual(len(enum_issues), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_alibaba_package_name(self):
+        code = 'package Com.Example;\npublic class Foo {}'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            pkg = [i for i in issues if i.rule_id == 'ALIBABA_PACKAGE_NAME']
+            self.assertGreaterEqual(len(pkg), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_alibaba_array_style(self):
+        code = 'class Foo { int array[]; }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            array_issues = [i for i in issues if i.rule_id == 'ALIBABA_ARRAY_STYLE']
+            self.assertGreaterEqual(len(array_issues), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_alibaba_boolean_prefix(self):
+        code = 'class Foo { private boolean isDeleted; }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            bp = [i for i in issues if i.rule_id == 'ALIBABA_BOOLEAN_PREFIX']
+            self.assertGreaterEqual(len(bp), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_alibaba_equals_comparison(self):
+        code = 'class Foo { void bar() { String x = "a"; x.equals("b"); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            eq = [i for i in issues if i.rule_id == 'ALIBABA_EQUALS_STYLE']
+            self.assertGreaterEqual(len(eq), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_alibaba_switch_default(self):
+        code = 'class Foo { void bar(int x) { switch(x) { case 1: break; } } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            sw = [i for i in issues if i.rule_id == 'ALIBABA_SWITCH_DEFAULT']
+            self.assertGreaterEqual(len(sw), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_alibaba_is_empty(self):
+        code = 'class Foo { void bar() { java.util.List l = null; if (l.size() == 0) {} } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            ie = [i for i in issues if i.rule_id == 'ALIBABA_IS_EMPTY']
+            self.assertGreaterEqual(len(ie), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_alibaba_long_suffix(self):
+        code = 'class Foo { long x = 100l; }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            ls = [i for i in issues if i.rule_id == 'ALIBABA_LONG_SUFFIX']
+            self.assertGreaterEqual(len(ls), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_alibaba_method_length(self):
+        code = 'class Foo {\n    void bar() {\n'
+        for _ in range(85):
+            code += '        System.out.println("x");\n'
+        code += '    }\n}'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            ml = [i for i in issues if i.rule_id == 'ALIBABA_METHOD_LENGTH']
+            self.assertGreaterEqual(len(ml), 1)
+        finally:
+            os.unlink(tmp)
 
     def test_auto_fix_issues(self):
         code = 'import java.util.List;\nimport java.util.ArrayList;\npublic class Foo {}\n'

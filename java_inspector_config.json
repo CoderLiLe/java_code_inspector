@@ -34,6 +34,25 @@
     "cyclomatic_complexity": {
       "enabled": true,
       "max_complexity": 15
+    },
+    "alibaba_naming": {
+      "enabled": true
+    },
+    "alibaba_oop": {
+      "enabled": true
+    },
+    "alibaba_control": {
+      "enabled": true
+    },
+    "alibaba_collection": {
+      "enabled": true
+    },
+    "alibaba_constant": {
+      "enabled": true
+    },
+    "alibaba_method_length": {
+      "enabled": true,
+      "max_lines": 80
     }
   },
   "auto_fix": {
