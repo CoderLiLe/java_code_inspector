@@ -36,6 +36,24 @@
     "enabled": true,
     "max_lines": 80
   },
+  "alibaba_code_style": {
+    "enabled": true
+  },
+  "alibaba_date": {
+    "enabled": true
+  },
+  "alibaba_comment": {
+    "enabled": true
+  },
+  "alibaba_exception": {
+    "enabled": true
+  },
+  "alibaba_logging": {
+    "enabled": true
+  },
+  "alibaba_other": {
+    "enabled": true
+  },
   "exclude_patterns": [
     "**/test/**"
   ]
