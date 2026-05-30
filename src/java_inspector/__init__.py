@@ -5,3 +5,4 @@ from java_inspector.reporter import InspectionReporter
 from java_inspector.ci_cd import CICDIntegrator
 from java_inspector.hooks import install_git_hook
 from java_inspector.cli import main
+from java_inspector.alibaba_rules import AlibabaRulesChecker
