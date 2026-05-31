@@ -75,6 +75,15 @@
   "sonar_design": {
     "enabled": true
   },
+  "sonar_error_prone": {
+    "enabled": true
+  },
+  "sonar_best_practices": {
+    "enabled": true
+  },
+  "sonar_clarity": {
+    "enabled": true
+  },
   "exclude_patterns": [
     "**/test/**"
   ]

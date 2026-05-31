@@ -457,23 +457,41 @@ class SonarQubeCheckerExt:
                         break
 
         # S1220: Serial version UID
+        def _get_impl_name(iface):
+            name = getattr(iface, "name", "")
+            sub = getattr(iface, "sub_type", None)
+            if sub:
+                sub_name = _get_impl_name(sub)
+                if sub_name:
+                    return name + "." + sub_name
+            return name
+
         for path, node in tree:
             if isinstance(node, javalang_tree.ClassDeclaration):
                 ext = getattr(node, "extends", None)
                 if ext and hasattr(ext, "name") and \
                    ext.name in ("Exception", "RuntimeException", "Throwable", "Error"):
                     continue
+                implements = getattr(node, "implements", []) or []
                 is_serializable = False
+                for iface in implements:
+                    full_name = _get_impl_name(iface)
+                    if "Serializable" in full_name:
+                        is_serializable = True
+                        break
+                if not is_serializable:
+                    continue
                 has_suid = False
                 for member in (node.body or []):
                     if isinstance(member, javalang_tree.FieldDeclaration):
                         for decl in member.declarators:
-                            if decl.name == "serialVersionUID":
+                            if getattr(decl, "name", "") == "serialVersionUID":
                                 has_suid = True
-                    if isinstance(member, javalang_tree.ClassDeclaration):
-                        pass
-                if is_serializable and not has_suid:
-                    pass
+                if not has_suid:
+                    l, c = self._pos(node)
+                    self._add(file_path, "SONAR_SERIAL_VERSION_UID",
+                              "S1220: 实现 Serializable 的类 '" + node.name + "' 应定义 serialVersionUID",
+                              _sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Design ====================
     def check_design(self, tree, file_path: str, content: str):
@@ -481,16 +499,21 @@ class SonarQubeCheckerExt:
             return
         lines = content.split("\n")
 
-        # S108: Empty block should be documented or removed
+        # S108: Empty block should be documented or removed (skip catch/finally blocks handled separately)
         for path, node in tree:
             if isinstance(node, javalang_tree.BlockStatement):
                 stmts = getattr(node, "statements", []) or []
-                if not stmts:
-                    parent_path = path[-2] if len(path) >= 2 else None
-                    if parent_path and hasattr(parent_path, "position") and parent_path.position:
-                        pp_line = parent_path.position.line
-                        if pp_line:
-                            pass
+                if stmts:
+                    continue
+                # Check if this is a try's catch or finally block (handled elsewhere)
+                parent_path = path[-2] if len(path) >= 2 else None
+                if parent_path and isinstance(parent_path, (javalang_tree.CatchClause,
+                                                             javalang_tree.TryStatement)):
+                    continue
+                l, c = self._pos(node)
+                self._add(file_path, "SONAR_EMPTY_BLOCK",
+                          "S108: 空代码块应添加注释说明或移除",
+                          _sq_severity("MAJOR"), line=l, column=c)
 
         # S110: Check inheritance depth (> 6)
         class_parents = {}

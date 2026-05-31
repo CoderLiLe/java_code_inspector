@@ -12,6 +12,7 @@ from java_inspector.config import InspectionConfig
 from java_inspector.alibaba_rules import AlibabaRulesChecker
 from java_inspector.sonarqube_rules import SonarQubeChecker
 from java_inspector.sonarqube_rules_ext import SonarQubeCheckerExt
+from java_inspector.sonarqube_rules_full import SonarQubeCheckerFull
 
 
 class JavaCodeInspector:
@@ -42,6 +43,7 @@ class JavaCodeInspector:
             AlibabaRulesChecker(self.config, self.issues).run_all(tree, file_path, content)
             SonarQubeChecker(self.config, self.issues).run_all(tree, file_path, content)
             SonarQubeCheckerExt(self.config, self.issues).run_all(tree, file_path, content)
+            SonarQubeCheckerFull(self.config, self.issues).run_all(tree, file_path, content)
 
             self._calculate_metrics(tree, file_path, content)
 
