@@ -11,6 +11,7 @@ from java_inspector.models import CodeIssue, CodeMetrics, Severity
 from java_inspector.config import InspectionConfig
 from java_inspector.alibaba_rules import AlibabaRulesChecker
 from java_inspector.sonarqube_rules import SonarQubeChecker
+from java_inspector.sonarqube_rules_ext import SonarQubeCheckerExt
 
 
 class JavaCodeInspector:
@@ -40,6 +41,7 @@ class JavaCodeInspector:
             self._check_magic_numbers(tree, file_path, content)
             AlibabaRulesChecker(self.config, self.issues).run_all(tree, file_path, content)
             SonarQubeChecker(self.config, self.issues).run_all(tree, file_path, content)
+            SonarQubeCheckerExt(self.config, self.issues).run_all(tree, file_path, content)
 
             self._calculate_metrics(tree, file_path, content)
 

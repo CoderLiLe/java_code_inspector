@@ -66,6 +66,15 @@
   "sonar_security": {
     "enabled": true
   },
+  "sonar_performance": {
+    "enabled": true
+  },
+  "sonar_reliability": {
+    "enabled": true
+  },
+  "sonar_design": {
+    "enabled": true
+  },
   "exclude_patterns": [
     "**/test/**"
   ]
