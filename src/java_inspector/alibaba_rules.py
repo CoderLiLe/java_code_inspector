@@ -162,19 +162,38 @@ class AlibabaRulesChecker:
                                   f"常量 '{cn}' 应全部大写，单词间用下划线隔开",
                                   Severity.WARNING, line=l, column=c)
 
+        # 1.18 Enum member names ALL_CAPS
+        for path, node in tree:
+            if isinstance(node, javalang.tree.EnumDeclaration):
+                for decl in (node.body or []):
+                    if isinstance(decl, javalang.tree.EnumConstantDeclaration):
+                        en = decl.name
+                        if en != en.upper():
+                            l, c = self._pos(decl)
+                            self._add(file_path, "ALIBABA_ENUM_MEMBER_NAMING",
+                                      f"枚举成员 '{en}' 应全部大写，单词间用下划线隔开",
+                                      Severity.WARNING, line=l, column=c)
+
         for path, node in tree:
             if isinstance(node, javalang.tree.ClassDeclaration):
                 cn = node.name
-                if cn.endswith("Exception") and not cn.endswith(("RuntimeException", "Exception")):
-                    pass  # Will be caught by pattern
-                elif not cn.endswith("Exception") and \
-                     any(cn + "Exception" == n2.name for p2, n2 in tree
-                         if isinstance(n2, javalang.tree.ClassDeclaration)):
-                    pass
-                if cn.startswith("Test") and cn.endswith("Test"):
+                extends_exception = False
+                ext = getattr(node, "extends", None)
+                if ext and hasattr(ext, "name"):
+                    en = ext.name
+                    if en in ("Exception", "RuntimeException", "Throwable", "Error") or \
+                       en.endswith("Exception") or en.endswith("Error"):
+                        extends_exception = True
+                        if not cn.endswith("Exception") and not cn.endswith("Error"):
+                            l, c = self._pos(node)
+                            self._add(file_path, "ALIBABA_EXCEPTION_NAMING",
+                                      f"异常类 '{cn}' 命名应以 Exception 结尾",
+                                      Severity.WARNING, line=l, column=c)
+                if cn.endswith("Test") and not extends_exception and \
+                   "abstract" not in (node.modifiers or []):
                     l, c = self._pos(node)
                     self._add(file_path, "ALIBABA_TEST_NAMING",
-                              f"测试类 '{cn}' 应以被测试类名为前缀加 Test 结尾",
+                              f"测试类 '{cn}' 命名应以被测试类名为前缀加 Test 结尾",
                               Severity.INFO, line=l, column=c)
 
         for path, node in tree:
@@ -561,6 +580,49 @@ class AlibabaRulesChecker:
                           "慎用 Object 的 clone 方法来拷贝对象，默认是浅拷贝",
                           Severity.INFO, line=i)
 
+        # 4.26 Private constructor for utility classes
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                all_static_methods = True
+                has_public_ctor = False
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.MethodDeclaration) and \
+                       "static" not in (member.modifiers or []):
+                        all_static_methods = False
+                    if isinstance(member, javalang.tree.ConstructorDeclaration):
+                        if "private" not in (member.modifiers or []):
+                            has_public_ctor = True
+                if all_static_methods and has_public_ctor:
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_UTILITY_CTOR",
+                              f"工具类 '{node.name}' 不允许有 public 或 default 构造方法，构造方法应为 private",
+                              Severity.WARNING, line=l, column=c)
+
+        # 4.22 No business logic in getter/setter
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                mn = node.name
+                if mn.startswith(("get", "is")) and len(mn) > 3 and \
+                   "static" not in (node.modifiers or []):
+                    body = node.body or []
+                    stmt_count = len(body) if isinstance(body, list) else \
+                                 len(getattr(body, "statements", []) or [])
+                    if stmt_count > 2:
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_GETTER_LOGIC",
+                                  f"getter 方法 '{mn}' 不应包含业务逻辑，应仅做属性返回",
+                                  Severity.INFO, line=l, column=c)
+                elif mn.startswith("set") and len(mn) > 3 and \
+                     "static" not in (node.modifiers or []):
+                    body = node.body or []
+                    stmt_count = len(body) if isinstance(body, list) else \
+                                 len(getattr(body, "statements", []) or [])
+                    if stmt_count > 3:
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_SETTER_LOGIC",
+                                  f"setter 方法 '{mn}' 不应包含业务逻辑，应仅做属性赋值",
+                                  Severity.INFO, line=l, column=c)
+
     # ==================== (五) 日期时间 ====================
     def check_date(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_date"):
@@ -585,15 +647,25 @@ class AlibabaRulesChecker:
                           "日期格式化时表示年份应使用小写 yyyy，大写 YYYY 表示 week in which year",
                           Severity.WARNING, line=i)
 
-            if re.search(r"SimpleDateFormat.*\"[^\"]*[MmHh]\"", line):
-                m = re.search(r"SimpleDateFormat.*\"([^\"]*)\"", line)
+            if re.search(r"SimpleDateFormat.*\"", line):
+                m = re.search(r"SimpleDateFormat.*\"([^\"]+)\"", line)
                 if m:
                     fmt = m.group(1)
-                    if ("M" in fmt and "m" in fmt and fmt.index("M") > fmt.index("m")) or \
-                       ("H" in fmt and "h" in fmt and fmt.index("H") > fmt.index("h")):
-                        pass
-                    elif ("M" in fmt or "m" in fmt) and "H" not in fmt and "h" not in fmt:
-                        pass
+                    has_valid = False
+                    if "M" in fmt and "m" in fmt:
+                        self._add(file_path, "ALIBABA_DATE_FORMAT_CASE",
+                                  "日期格式中月份为大写 M，分钟为小写 m，请勿混淆",
+                                  Severity.WARNING, line=i)
+                        has_valid = True
+                    if "H" in fmt and "h" in fmt:
+                        self._add(file_path, "ALIBABA_DATE_FORMAT_CASE",
+                                  "日期格式中 24 小时制为大写 H，12 小时制为小写 h，请确认意图",
+                                  Severity.WARNING, line=i)
+                        has_valid = True
+                    if re.search(r"[Mm]{3,}", fmt):
+                        self._add(file_path, "ALIBABA_DATE_FORMAT_CASE",
+                                  "月份格式 MMM/MMMM 可能不符合预期，推荐使用 MM",
+                                  Severity.INFO, line=i)
 
             if re.search(r"365", line) and re.search(r"(day|year|date|DAYS|Calendar)", line, re.IGNORECASE):
                 self._add(file_path, "ALIBABA_HARDCODED_365",
@@ -702,6 +774,40 @@ class AlibabaRulesChecker:
                               "使用 addAll 方法时，要对输入的集合参数进行 NPE 判断",
                               Severity.INFO, line=i)
 
+        # 6.18 entrySet over keySet - detect keySet() loop followed by .get()
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\.keySet\s*\(\)", line):
+                for j in range(i, min(i + 15, len(lines) + 1)):
+                    if j <= len(lines) and re.search(r"\.get\s*\(", lines[j - 1]):
+                        self._add(file_path, "ALIBABA_KEYSET_LOOP",
+                                  "遍历 Map 推荐使用 entrySet 而非 keySet，避免重复 get 调用",
+                                  Severity.INFO, line=i)
+                        break
+                    if j <= len(lines) and re.search(r"^\s*\}", lines[j - 1]):
+                        break
+
+        # 6.21 Set for dedup
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\b(for|while)\s*\(", line):
+                loop_start = i
+                for j in range(i, min(i + 15, len(lines) + 1)):
+                    if j <= len(lines) and re.search(r"\.contains\(", lines[j - 1]):
+                        m = re.search(r"(\w+)\.contains\(", lines[j - 1])
+                        if m and m.group(1)[0].islower():
+                            self._add(file_path, "ALIBABA_LIST_CONTAINS",
+                                      "利用 Set 元素唯一的特性，可快速去重，避免使用 List 的 contains() 遍历",
+                                      Severity.INFO, line=j)
+                        break
+                    if j <= len(lines) and re.search(r"^\s*\}", lines[j - 1]):
+                        break
+
+        # 6.7 Collections.emptyList/singletonList immutable
+        for i, line in enumerate(lines, 1):
+            if re.search(r"Collections\.(empty|singleton)\w*\s*\(\s*\)\s*\.\s*(add|remove|clear)\s*\(", line):
+                self._add(file_path, "ALIBABA_IMMUTABLE_COLLECTION",
+                          "Collections.emptyList()/singletonList() 等返回的是不可变集合，不能调用 add/remove/clear",
+                          Severity.WARNING, line=i)
+
     # ==================== (八) 控制语句 ====================
     def check_control(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_control"):
@@ -772,6 +878,24 @@ class AlibabaRulesChecker:
             self._add(file_path, "ALIBABA_IF_DEPTH",
                       "if-else 层级超过 3 层，建议使用卫语句、策略模式或状态模式重构",
                       Severity.INFO, line=0)
+
+        # 8.9 No assignment in conditions
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\b(if|while)\s*\([^)]*=\s*[^=]", line) and \
+               not re.search(r"[=!]=|&&|\|\|", line):
+                code_part = re.sub(r"//.*|/\*.*?\*/|\".*?\"", "", line, flags=re.DOTALL)
+                if "=" in code_part:
+                    self._add(file_path, "ALIBABA_ASSIGN_IN_CONDITION",
+                              "不要在条件表达式中插入赋值语句，赋值语句应清晰单独成为一行",
+                              Severity.WARNING, line=i)
+
+        # 8.11 Avoid negation
+        for i, line in enumerate(lines, 1):
+            if re.search(r"if\s*\(\s*!\(", line) and \
+               not re.search(r"//.*if", line):
+                self._add(file_path, "ALIBABA_AVOID_NOT",
+                          "避免采用取反逻辑运算符，建议使用正向逻辑表达",
+                          Severity.INFO, line=i)
 
     # ==================== (七) 并发处理 ====================
     def check_concurrency(self, tree, file_path: str, content: str):
@@ -943,6 +1067,19 @@ class AlibabaRulesChecker:
                 if re.search(r"^\s*\}", line):
                     in_finally = False
 
+        # 12 - Don't throw raw RuntimeException/Exception
+        for i, line in enumerate(lines, 1):
+            if re.search(r"throw\s+new\s+(RuntimeException|Exception)\s*\(", line) and \
+               not re.search(r"//.*throw", line):
+                self._add(file_path, "ALIBABA_RAW_EXCEPTION",
+                          "禁止直接抛出 RuntimeException 或 Exception，应使用有业务含义的自定义异常",
+                          Severity.WARNING, line=i)
+            if re.search(r"catch\s*\(\s*(Exception|Throwable)\s+\w+\s*\)", line) and \
+               not re.search(r"(RPC|反射|reflect|Proxy|动态)", content, re.IGNORECASE):
+                self._add(file_path, "ALIBABA_CATCH_GENERIC",
+                          "catch 时应尽可能区分异常类型，避免使用 Exception/Throwable 捕获所有异常",
+                          Severity.INFO, line=i)
+
     # ==================== (三) 日志规约 ====================
     def check_logging(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_logging"):
@@ -1030,6 +1167,18 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_SQL_INJECTION",
                           "禁止字符串拼接 SQL 语句，应使用参数绑定方式防止 SQL 注入",
                           Severity.WARNING, line=i)
+
+            # 2.1 Magic string values
+            if re.search(r'\.equals\s*\(\s*"', line) or \
+               re.search(r'\.put\s*\(\s*"', line) or \
+               re.search(r'case\s+"', line):
+                m = re.search(r'"(?:[^"\\]|\\.)*"', line)
+                if m and not re.search(r'static\s+final\s+\w+\s*=\s*', line):
+                    literal = m.group(0)
+                    if len(literal) > 5 and len(literal) < 40:
+                        self._add(file_path, "ALIBABA_MAGIC_STRING",
+                                  f"不允许魔法值（未经预先定义的常量）直接出现在代码中: {literal}",
+                                  Severity.INFO, line=i)
 
         for path, node in tree:
             if isinstance(node, javalang.tree.EnumDeclaration):
