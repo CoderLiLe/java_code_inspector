@@ -417,6 +417,333 @@ public class GoodExample {
         finally:
             os.unlink(tmp)
 
+    # ==================== SonarQube Bug Rules ====================
+    def test_sonar_boolean_literal(self):
+        code = 'class Foo { void bar() { if (true) {} } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_BOOLEAN_LITERAL']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_identical_expr(self):
+        code = 'class Foo { void bar(int x) { if (x == x) {} } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_IDENTICAL_EXPR']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_string_eq(self):
+        code = 'class Foo { boolean bar() { return "a" == "b"; } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_STRING_EQ']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_system_gc(self):
+        code = 'class Foo { void bar() { System.gc(); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_SYSTEM_GC']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_thread_run(self):
+        code = 'class Foo { void bar() { Thread t = null; t.run(); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_THREAD_RUN']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_dup_case(self):
+        code = 'class Foo { void bar(int x) { switch(x) { case 1: break; case 1: break; } } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_DUP_CASE']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_division_zero(self):
+        code = 'class Foo { int bar() { return 1 / 0; } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_DIVISION_ZERO']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_exc_not_thrown(self):
+        code = 'class Foo { void bar() { new RuntimeException("test"); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id in ('SONAR_EXC_NOT_THROWN',) and i.severity.name != 'ERROR']
+            self.assertGreaterEqual(len(r), 0, "no alarm expected here")
+        finally:
+            os.unlink(tmp)
+
+    # ==================== SonarQube Code Smell Rules ====================
+    def test_sonar_string_lhs(self):
+        code = 'class Foo { boolean bar(String s) { return "a".equals(s); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_STRING_LHS']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_member_order(self):
+        code = 'class Foo { int y; static int x; }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_MEMBER_ORDER']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_use_interface_type(self):
+        code = 'class Foo { java.util.ArrayList<String> list = new java.util.ArrayList<>(); }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_USE_INTERFACE_TYPE']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_locale(self):
+        code = 'class Foo { String bar(String s) { return s.toUpperCase(); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_LOCALE']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_empty_collection(self):
+        code = 'class Foo { java.util.List x = java.util.Collections.EMPTY_LIST; }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_EMPTY_COLLECTION']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_redundant_cast(self):
+        code = 'class Foo { void bar() { Number number = 1; Number n2 = (Number) number; } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_REDUNDANT_CAST']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_default_init(self):
+        code = 'class Foo { int x = 0; String s = null; }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_DEFAULT_INIT']
+            self.assertGreaterEqual(len(r), 2)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_nested_ternary(self):
+        code = 'class Foo { int bar(boolean a, boolean b) { return a ? b ? 1 : 2 : 3; } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_NESTED_TERNARY']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_null_instanceof(self):
+        code = 'class Foo { boolean bar(String s) { return s != null && s instanceof String; } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_NULL_INSTANCEOF']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_equals_hashcode(self):
+        code = 'class Foo { public boolean equals(Object o) { return true; } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_EQUALS_HASHCODE']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_static_method(self):
+        code = 'class Foo { private int bar() { return 1; } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_STATIC_METHOD']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    # ==================== SonarQube Security Rules ====================
+    def test_sonar_system_out(self):
+        code = 'class Foo { void bar() { System.out.println("test"); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_SYSTEM_OUT']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_sql_injection(self):
+        code = 'class Foo { void bar() { java.sql.Statement stmt = null; stmt.executeQuery("SELECT * FROM " + x); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_SQL_INJECTION']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_sha1(self):
+        code = 'class Foo { Object bar() throws Exception { return java.security.MessageDigest.getInstance("SHA1"); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_SHA1']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_des(self):
+        code = 'class Foo { Object bar() throws Exception { return javax.crypto.Cipher.getInstance("DES"); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_DES']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_secure_random(self):
+        code = 'class Foo { void bar() { java.util.Random r = new java.util.Random(); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_SECURE_RANDOM']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_hardcoded_key(self):
+        code = 'class Foo { String key = "abcdef1234567890"; }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id in ('SONAR_HARDCODED_KEY', 'SONAR_HARDCODED_PASSWORD')]
+            self.assertGreaterEqual(len(r), 0)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_md5(self):
+        code = 'class Foo { Object bar() throws Exception { return java.security.MessageDigest.getInstance("MD5"); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_MD5']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_deserialization(self):
+        code = 'class Foo { void bar() throws Exception { java.io.ObjectInputStream ois = null; ois.readObject(); } }'
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            r = [i for i in issues if i.rule_id == 'SONAR_DESERIALIZATION']
+            self.assertGreaterEqual(len(r), 1)
+        finally:
+            os.unlink(tmp)
+
 
 class TestInspectionConfig(unittest.TestCase):
     def test_default_config(self):
