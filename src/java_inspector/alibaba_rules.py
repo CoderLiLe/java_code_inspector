@@ -110,6 +110,58 @@ class AlibabaRulesChecker:
                               "所有编程相关的命名均不能以美元符号开始或结束",
                               Severity.WARNING, line=i)
 
+        # 1.4 UpperCamelCase for classes (except DO/PO/DTO/BO/VO/UID)
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               not any(m == "abstract" for m in (node.modifiers or [])):
+                cn = node.name
+                if cn[0].islower() and not cn.startswith(("DO", "PO", "VO", "BO", "UID")):
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_UPPER_CAMEL",
+                              f"类名 '{cn}' 应使用 UpperCamelCase 风格（首字母大写）",
+                              Severity.WARNING, line=l, column=c)
+
+        # 1.5 lowerCamelCase for methods, params, variables
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                mn = node.name
+                if mn[0].isupper() and mn != mn.upper() and not mn.startswith("_"):
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_LOWER_CAMEL_METHOD",
+                              f"方法名 '{mn}' 应使用 lowerCamelCase 风格（首字母小写）",
+                              Severity.WARNING, line=l, column=c)
+                for param in (node.parameters or []):
+                    pn = param.name
+                    if pn and pn[0].isupper() and pn != pn.upper() and len(pn) > 1:
+                        l, c = self._pos(param)
+                        self._add(file_path, "ALIBABA_LOWER_CAMEL_PARAM",
+                                  f"参数名 '{pn}' 应使用 lowerCamelCase 风格（首字母小写）",
+                                  Severity.WARNING, line=l, column=c)
+
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration) and \
+               not any(m in (node.modifiers or []) for m in ("static", "final")):
+                for decl in node.declarators:
+                    fn = decl.name
+                    if fn and fn[0].isupper() and fn != fn.upper() and len(fn) > 1:
+                        l, c = self._pos(decl)
+                        self._add(file_path, "ALIBABA_LOWER_CAMEL_FIELD",
+                                  f"成员变量 '{fn}' 应使用 lowerCamelCase 风格（首字母小写）",
+                                  Severity.WARNING, line=l, column=c)
+
+        # 1.6 Constants ALL_CAPS
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration) and \
+               "static" in (node.modifiers or []) and \
+               "final" in (node.modifiers or []):
+                for decl in node.declarators:
+                    cn = decl.name
+                    if cn != cn.upper() and not cn.startswith("serialVersionUID"):
+                        l, c = self._pos(decl)
+                        self._add(file_path, "ALIBABA_CONSTANT_NAMING",
+                                  f"常量 '{cn}' 应全部大写，单词间用下划线隔开",
+                                  Severity.WARNING, line=l, column=c)
+
         for path, node in tree:
             if isinstance(node, javalang.tree.ClassDeclaration):
                 cn = node.name
@@ -338,22 +390,25 @@ class AlibabaRulesChecker:
                 if re.search(r"^\s*\}", line):
                     in_loop = False
 
+        # 4.2 All override methods must have @Override
         for path, node in tree:
             if isinstance(node, javalang.tree.ClassDeclaration):
-                parent = getattr(node, "extends", None) or getattr(node, "implements", None)
+                parent = getattr(node, "extends", None) is not None or \
+                         len(getattr(node, "implements", []) or []) > 0
                 if parent:
-                    cls_name = node.name
                     for p2, n2 in tree:
                         if isinstance(n2, javalang.tree.MethodDeclaration) and \
+                           n2.name in ("toString", "equals", "hashCode", "clone", "finalize") and \
                            not any(m == "static" for m in (n2.modifiers or [])):
-                            has_override = False
-                            for ann in (n2.annotations or []):
-                                if hasattr(ann, "name") and ann.name == "Override":
-                                    has_override = True
-                            if not has_override and hasattr(n2, "position") and n2.position:
-                                m_line = n2.position.line
-                                if m_line > 1 and m_line <= len(lines):
-                                    pass
+                            has_override = any(
+                                getattr(ann, "name", "") == "Override"
+                                for ann in (n2.annotations or [])
+                            )
+                            if not has_override:
+                                l, c = self._pos(n2) if hasattr(n2, "position") else (0, 0)
+                                self._add(file_path, "ALIBABA_OVERRIDE_ANNOTATION",
+                                          f"覆写方法 '{n2.name}' 必须加 @Override 注解",
+                                          Severity.WARNING, line=l, column=c)
 
         for path, node in tree:
             if isinstance(node, javalang.tree.MethodInvocation) and \
@@ -427,6 +482,42 @@ class AlibabaRulesChecker:
                                                   f"POJO 类属性 '{decl.name}' 必须使用包装数据类型，而非基本类型 '{ft.name}'",
                                                   Severity.WARNING, line=l, column=c)
 
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                implements_serializable = any(
+                    hasattr(iface, "name") and iface.name == "Serializable"
+                    for iface in getattr(node, "implements", []) or []
+                ) or "Serializable" in str(getattr(node, "implements", ""))
+                if implements_serializable:
+                    has_suid = any(
+                        isinstance(f, javalang.tree.FieldDeclaration) and
+                        any(d.name == "serialVersionUID" for d in f.declarators)
+                        for f in (node.body or [])
+                    )
+                    if not has_suid:
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_SERIAL_VERSION_UID",
+                                  f"实现 Serializable 的类 '{node.name}' 应声明 serialVersionUID 字段",
+                                  Severity.WARNING, line=l, column=c)
+
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ConstructorDeclaration):
+                body = node.body or []
+                has_logic = False
+                for stmt in body:
+                    if isinstance(stmt, (javalang.tree.MethodInvocation,
+                                        javalang.tree.IfStatement,
+                                        javalang.tree.ForStatement,
+                                        javalang.tree.WhileStatement,
+                                        javalang.tree.TryStatement)):
+                        has_logic = True
+                        break
+                if has_logic:
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_CONSTRUCTOR_LOGIC",
+                              "构造方法里面禁止加入任何业务逻辑，如果有初始化逻辑请放在 init 方法中",
+                              Severity.WARNING, line=l, column=c)
+
         for i, line in enumerate(lines, 1):
             m = re.search(r"(\w+)\s*==\s*(\w+)\s*$", line)
             if m:
@@ -493,6 +584,16 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_DATE_FORMAT_YEAR",
                           "日期格式化时表示年份应使用小写 yyyy，大写 YYYY 表示 week in which year",
                           Severity.WARNING, line=i)
+
+            if re.search(r"SimpleDateFormat.*\"[^\"]*[MmHh]\"", line):
+                m = re.search(r"SimpleDateFormat.*\"([^\"]*)\"", line)
+                if m:
+                    fmt = m.group(1)
+                    if ("M" in fmt and "m" in fmt and fmt.index("M") > fmt.index("m")) or \
+                       ("H" in fmt and "h" in fmt and fmt.index("H") > fmt.index("h")):
+                        pass
+                    elif ("M" in fmt or "m" in fmt) and "H" not in fmt and "h" not in fmt:
+                        pass
 
             if re.search(r"365", line) and re.search(r"(day|year|date|DAYS|Calendar)", line, re.IGNORECASE):
                 self._add(file_path, "ALIBABA_HARDCODED_365",
@@ -615,6 +716,19 @@ class AlibabaRulesChecker:
                     self._add(file_path, "ALIBABA_SWITCH_DEFAULT",
                               "switch 块内必须包含一个 default 语句",
                               Severity.WARNING, line=l, column=c)
+                for case in node.cases:
+                    if case.case is not None:
+                        stmts = case.statements or []
+                        if stmts and not any(
+                            isinstance(s, (javalang.tree.BreakStatement,
+                                           javalang.tree.ReturnStatement,
+                                           javalang.tree.ContinueStatement))
+                            for s in stmts
+                        ):
+                            cl = case.case.position.line if hasattr(case.case, "position") and case.case.position else 0
+                            self._add(file_path, "ALIBABA_SWITCH_BREAK",
+                                      "switch 的每个 case 必须通过 break/return 等来终止",
+                                      Severity.WARNING, line=cl)
 
         for i, line in enumerate(lines, 1):
             if re.search(r"\b(if|else\s+if|for|while|do)\s*\([^)]*\)\s*[^\s{;]", line) and \
@@ -664,14 +778,11 @@ class AlibabaRulesChecker:
         if not self.config.is_rule_enabled("alibaba_concurrency"):
             return
         lines = content.split("\n")
-        for path, node in tree:
-            if isinstance(node, javalang.tree.ClassDeclaration):
-                cls_name = node.name
-                for p2, n2 in tree:
-                    if isinstance(n2, javalang.tree.MethodDeclaration):
-                        for p3, n3 in tree:
-                            if id(p3) == id(path) and isinstance(n3, javalang.tree.ClassDeclaration):
-                                pass
+        for i, line in enumerate(lines, 1):
+            if re.search(r"new\s+Thread\s*\(\s*\)", line):
+                self._add(file_path, "ALIBABA_THREAD_NAME",
+                          "创建线程或线程池时请指定有意义的线程名称，方便出错时回溯",
+                          Severity.INFO, line=i)
         for i, line in enumerate(lines, 1):
             if re.search(r"\bnew\s+Thread\b", line) and not re.search(r"new\s+Thread\s*\([^)]+\)\s*\{", line):
                 self._add(file_path, "ALIBABA_NEW_THREAD",
@@ -779,6 +890,22 @@ class AlibabaRulesChecker:
                               f"类 '{node.name}' 缺少 Javadoc 注释（创建者和创建日期）",
                               Severity.INFO, line=l, column=c)
 
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration) and \
+               ("abstract" in (node.modifiers or []) or
+                (isinstance(path[-2] if len(path) >= 2 else None, javalang.tree.InterfaceDeclaration))):
+                ml = node.position.line if node.position else 0
+                has_javadoc = False
+                for jj in range(max(0, ml - 5), ml - 1):
+                    if jj < len(lines) and re.search(r"/\*\*", lines[jj]):
+                        has_javadoc = True
+                        break
+                if not has_javadoc:
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_ABSTRACT_JAVADOC",
+                              f"抽象方法（接口方法）'{node.name}' 必须使用 Javadoc 注释",
+                              Severity.INFO, line=l, column=c)
+
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             if stripped.startswith("//") and re.search(
@@ -855,6 +982,15 @@ class AlibabaRulesChecker:
                           "trace/debug 级别日志输出必须进行级别开关判断",
                           Severity.INFO, line=i)
 
+            if re.search(r"System\.(out|err)\.(print|println|printf)", line):
+                self._add(file_path, "ALIBABA_SYSTEM_OUT",
+                          "生产环境禁止使用 System.out/err 输出或使用 e.printStackTrace() 打印异常堆栈",
+                          Severity.WARNING, line=i)
+            if re.search(r"\.printStackTrace\s*\(\)", line):
+                self._add(file_path, "ALIBABA_SYSTEM_OUT",
+                          "生产环境禁止使用 System.out/err 输出或使用 e.printStackTrace() 打印异常堆栈",
+                          Severity.WARNING, line=i)
+
     # ==================== (十一) 其他 ====================
     def check_other(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_other"):
@@ -877,6 +1013,22 @@ class AlibabaRulesChecker:
             if re.search(r"new\s+BigDecimal\s*\(\s*\d+\.\d+\s*\)", line):
                 self._add(file_path, "ALIBABA_BIGDECIMAL_CONSTRUCTOR",
                           "禁止使用 BigDecimal(double) 构造方法，应使用 BigDecimal(String) 或 BigDecimal.valueOf()",
+                          Severity.WARNING, line=i)
+
+            if re.search(r"Math\.random\(\)", line):
+                self._add(file_path, "ALIBABA_MATH_RANDOM",
+                          "注意 Math.random() 返回 double 类型，取值范围 0≤x<1，建议使用 Random 或 ThreadLocalRandom",
+                          Severity.INFO, line=i)
+
+            if re.search(r"\.executeQuery\s*\(\s*\"", line) or \
+               re.search(r"\.executeUpdate\s*\(\s*\"", line) or \
+               re.search(r"\.prepareStatement\s*\(\s*\"", line):
+                pass  # Already using parameterized query - OK
+            elif re.search(r"(SELECT|INSERT|UPDATE|DELETE)\s", line, re.IGNORECASE) and \
+                 re.search(r"\+", line) and \
+                 not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_SQL_INJECTION",
+                          "禁止字符串拼接 SQL 语句，应使用参数绑定方式防止 SQL 注入",
                           Severity.WARNING, line=i)
 
         for path, node in tree:
