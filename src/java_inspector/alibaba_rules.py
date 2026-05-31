@@ -174,6 +174,30 @@ class AlibabaRulesChecker:
                                       f"枚举成员 '{en}' 应全部大写，单词间用下划线隔开",
                                       Severity.WARNING, line=l, column=c)
 
+        # 1.11 Avoid same names across parent/child/local blocks
+        parent_field_names = {}
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                fields = set()
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.FieldDeclaration):
+                        for decl in member.declarators:
+                            fields.add(decl.name)
+                parent_field_names[node.name] = (fields, path)
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                ext = getattr(node, "extends", None)
+                if ext and hasattr(ext, "name") and ext.name in parent_field_names:
+                    parent_fields, _ = parent_field_names[ext.name]
+                    for member in (node.body or []):
+                        if isinstance(member, javalang.tree.FieldDeclaration):
+                            for decl in member.declarators:
+                                if decl.name in parent_fields:
+                                    l, c = self._pos(decl)
+                                    self._add(file_path, "ALIBABA_NAMING_CONFLICT",
+                                              f"子类 '{node.name}' 的成员变量 '{decl.name}' 与父类 '{ext.name}' 的成员变量同名，避免混淆",
+                                              Severity.INFO, line=l, column=c)
+
         for path, node in tree:
             if isinstance(node, javalang.tree.ClassDeclaration):
                 cn = node.name
@@ -623,6 +647,18 @@ class AlibabaRulesChecker:
                                   f"setter 方法 '{mn}' 不应包含业务逻辑，应仅做属性赋值",
                                   Severity.INFO, line=l, column=c)
 
+        # 4.19 Split result bounds check
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\.split\s*\([^)]+\)\s*\[", line):
+                for j in range(max(0, i - 5), i):
+                    if j < len(lines) and re.search(r"\.length\s*[>=]", lines[j]) and \
+                       re.search(r"\.split", lines[j]):
+                        break
+                else:
+                    self._add(file_path, "ALIBABA_SPLIT_RESULT",
+                              "使用索引访问 String 的 split 方法得到的数组时，需做最后一个分隔符后有无内容的检查",
+                              Severity.INFO, line=i)
+
     # ==================== (五) 日期时间 ====================
     def check_date(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_date"):
@@ -808,7 +844,32 @@ class AlibabaRulesChecker:
                           "Collections.emptyList()/singletonList() 等返回的是不可变集合，不能调用 add/remove/clear",
                           Severity.WARNING, line=i)
 
-    # ==================== (八) 控制语句 ====================
+        # 6.13 Raw type collections
+        for path, node in tree:
+            if not isinstance(node, javalang.tree.VariableDeclaration):
+                continue
+            if not hasattr(node, "type") or not node.type:
+                continue
+            if not hasattr(node.type, "name"):
+                continue
+            if node.type.name not in ("List", "Map", "Set", "ArrayList", "HashMap", "HashSet"):
+                continue
+            has_type_args = hasattr(node.type, "type_arguments") and node.type.type_arguments
+            if has_type_args:
+                continue
+            for decl in node.declarators:
+                init = getattr(decl, "initializer", None)
+                if init and hasattr(init, "type_arguments") and not init.type_arguments:
+                    continue
+                if init and isinstance(init, javalang.tree.MethodInvocation) and \
+                   "asList" in str(init):
+                    continue
+                l, c = self._pos(decl)
+                self._add(file_path, "ALIBABA_RAW_TYPE",
+                          "在无泛型限制定义的集合赋值给泛型限制的集合时，在进行元素使用时需要做 instanceof 判断",
+                          Severity.INFO, line=l, column=c)
+
+        # ==================== (八) 控制语句 ====================
     def check_control(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_control"):
             return
@@ -897,6 +958,48 @@ class AlibabaRulesChecker:
                           "避免采用取反逻辑运算符，建议使用正向逻辑表达",
                           Severity.INFO, line=i)
 
+        # 8.12 Public method input parameter validation
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration) and \
+               "public" in (node.modifiers or []) and \
+               node.name not in ("main", "toString", "equals", "hashCode", "get", "set",
+                                "getClass", "notify", "wait"):
+                has_object_param = False
+                has_null_check = False
+                body_stmts = node.body if isinstance(node.body, list) else \
+                            getattr(getattr(node, "body", None), "statements", []) or []
+                for stmt in body_stmts:
+                    if isinstance(stmt, javalang.tree.IfStatement) and \
+                       hasattr(stmt, "expression") and stmt.expression and \
+                       "null" in str(stmt.expression):
+                        has_null_check = True
+                for param in (node.parameters or []):
+                    pt = getattr(param, "type", None)
+                    if pt and hasattr(pt, "name") and pt.name == "Object":
+                        has_object_param = True
+                    elif pt and hasattr(pt, "name") and pt.name not in (
+                        "int", "long", "double", "float", "boolean", "char", "byte", "short",
+                        "String", "Integer", "Long", "Double", "Float", "Boolean"
+                    ):
+                        has_object_param = True
+                if has_object_param and not has_null_check and len(body_stmts) > 2:
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_PARAM_VALIDATION",
+                              "公开接口需要进行入参保护，对参数进行有效性验证",
+                              Severity.INFO, line=l, column=c)
+
+        # 8.10 Object creation in loop
+        for path, node in tree:
+            if isinstance(node, (javalang.tree.ForStatement, javalang.tree.WhileStatement)):
+                body = node.body if isinstance(node.body, list) else \
+                       getattr(getattr(node, "body", None), "statements", []) or []
+                new_count = sum(1 for s in body if "new " in str(s))
+                if new_count > 3:
+                    l = node.position.line if node.position else 0
+                    self._add(file_path, "ALIBABA_LOOP_OBJECT_CREATION",
+                              "循环体中的对象定义应尽量移至循环体外处理，提升性能",
+                              Severity.INFO, line=l)
+
     # ==================== (七) 并发处理 ====================
     def check_concurrency(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_concurrency"):
@@ -970,6 +1073,45 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_RANDOM_INSTANCE",
                           "避免 Random 实例被多线程使用，推荐使用 ThreadLocalRandom",
                           Severity.INFO, line=i)
+
+        # 7.16 Double-checked locking without volatile
+        for path, node in tree:
+            if isinstance(node, javalang.tree.SynchronizedStatement):
+                body_stmts = node.body if isinstance(node.body, list) else \
+                            getattr(getattr(node, "body", None), "statements", []) or []
+                for stmt in body_stmts:
+                    if isinstance(stmt, javalang.tree.IfStatement) and \
+                       hasattr(stmt, "expression") and stmt.expression:
+                        if_str = str(stmt.expression)
+                        if "null" in if_str and "==" in if_str:
+                            l = node.position.line if node.position else 0
+                            for p2, n2 in tree:
+                                if isinstance(n2, javalang.tree.FieldDeclaration) and \
+                                   "volatile" not in (n2.modifiers or []):
+                                    for decl in n2.declarators:
+                                        df = str(decl)
+                                        if df.split("=")[0].strip() in if_str:
+                                            ll, cc = self._pos(decl)
+                                            self._add(file_path, "ALIBABA_DCL_VOLATILE",
+                                                      "双重检查锁（double-checked locking）实现延迟初始化需要将目标属性声明为 volatile",
+                                                      Severity.WARNING, line=ll, column=cc)
+                                            break
+
+        # 7.14 CountDownLatch without guaranteed countDown
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodInvocation) and \
+               node.member == "await" and \
+               hasattr(node, "qualifier") and "CountDownLatch" in str(node.qualifier):
+                l = node.position.line if hasattr(node, "position") and node.position else 0
+                for j in range(max(0, l - 2), l + 30):
+                    if j < len(lines) and "countDown" not in lines[j] and \
+                       j < len(lines) and "finally" in lines[j]:
+                        break
+                else:
+                    if l > 0:
+                        self._add(file_path, "ALIBABA_COUNTDOWN_AWAIT",
+                                  "使用 CountDownLatch 进行异步转同步，每个线程退出前必须调用 countDown 方法，确保在 finally 中执行",
+                                  Severity.WARNING, line=l)
 
     # ==================== (九) 注释规约 ====================
     def check_comment(self, tree, file_path: str, content: str):
@@ -1045,6 +1187,61 @@ class AlibabaRulesChecker:
         if not self.config.is_rule_enabled("alibaba_exception"):
             return
         lines = content.split("\n")
+
+        for path, node in tree:
+            if isinstance(node, javalang.tree.TryStatement):
+                for catch in (node.catches or []):
+                    block = catch.block if hasattr(catch, "block") and catch.block else \
+                            getattr(catch, "body", None)
+                    body_stmts = block.statements if hasattr(block, "statements") else \
+                                 (block if isinstance(block, list) else [])
+                    non_comment_stmts = [s for s in body_stmts if not isinstance(s, javalang.tree.StatementExpression)]
+                    if not non_comment_stmts:
+                        cl = catch.parameter.position.line if catch.parameter and catch.parameter.position else 0
+                        self._add(file_path, "ALIBABA_EMPTY_CATCH",
+                                  "捕获异常是为了处理它，不要捕获了却什么都不处理而抛弃之",
+                                  Severity.WARNING, line=cl)
+
+        # 6 - Close resources in finally / use try-with-resources
+        for i, line in enumerate(lines, 1):
+            if re.search(r"new\s+(File(Input|Output)Stream|FileReader|FileWriter|BufferedReader|BufferedWriter"
+                         r"|InputStreamReader|OutputStreamWriter)", line):
+                for j in range(i, min(i + 30, len(lines) + 1)):
+                    if j <= len(lines) and re.search(r"\.close\s*\(\)", lines[j - 1]):
+                        break
+                else:
+                    close_seen = False
+                    for j in range(i, min(i + 30, len(lines) + 1)):
+                        if j <= len(lines) and re.search(r"try\s*[({]|try\s*[\(]", lines[j - 1]):
+                            parent_line = re.search(r"try\s*[(]?\s*[^)]*" + re.escape(line.strip()[:20]), lines[j - 1]) if j - 1 < len(lines) else None
+                            break
+                    self._add(file_path, "ALIBABA_STREAM_CLOSE",
+                              "IO 流必须通过 finally 块 close 关闭或使用 try-with-resources 方式",
+                              Severity.WARNING, line=i)
+
+        # 11 - NPE from auto-unboxing
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                ret_type = getattr(node, "return_type", None)
+                if ret_type and hasattr(ret_type, "name") and ret_type.name in ("int", "long", "boolean", "double"):
+                    for p2, n2 in tree:
+                        if isinstance(n2, javalang.tree.ReturnStatement) and \
+                           hasattr(n2, "expression") and n2.expression and \
+                           hasattr(n2.expression, "qualifier") and \
+                           isinstance(n2.expression.qualifier, javalang.tree.MemberReference):
+                            pass
+                        elif isinstance(n2, javalang.tree.ReturnStatement) and \
+                             hasattr(n2, "expression") and n2.expression and \
+                             hasattr(n2.expression, "prefix_operators") and \
+                             "(" in str(getattr(n2.expression, "selectors", [])):
+                            pass
+
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\breturn\s+(Integer|Long|Boolean|Double|Float)\.valueOf\(", line) and \
+               re.search(r"(int|long|boolean|double|float)\s+\w+\s*=", line):
+                self._add(file_path, "ALIBABA_NPE_AUTOBOX",
+                          "注意自动拆箱可能产生 NPE，返回包装类型对象给基本类型时可能为 null",
+                          Severity.WARNING, line=i)
 
         for i, line in enumerate(lines, 1):
             if re.search(r"catch\s*\(\s*(NullPointerException|IndexOutOfBoundsException|"
