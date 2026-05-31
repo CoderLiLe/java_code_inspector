@@ -92,25 +92,38 @@ class AlibabaRulesChecker:
             if re.search(r"\b[a-z]{1,2}\b", line) and \
                re.search(r"\b(int|long|String|boolean|double|float|Object)\s+\b[a-z]{1,2}\b", line):
                 m = re.search(r"\b(int|long|String|boolean|double|float|Object)\s+([a-z]{1,2})\b", line)
-                if m:
+                if m and not re.search(r"//.*$", line):
                     self._add(file_path, "ALIBABA_CRYPTIC_NAME",
                               f"杜绝不规范的缩写 '{m.group(2)}'，应使用完整单词组合来表达语义",
                               Severity.INFO, line=i)
 
+            if re.search(r"\b\$", line) and not re.search(r"\"", line):
+                m = re.search(r"\$(\w+)", line)
+                if m:
+                    self._add(file_path, "ALIBABA_DOLLAR_NAME",
+                              "所有编程相关的命名均不能以美元符号开始或结束",
+                              Severity.WARNING, line=i)
+            if re.search(r"\$\b", line):
+                m = re.search(r"(\w+)\$", line)
+                if m:
+                    self._add(file_path, "ALIBABA_DOLLAR_NAME",
+                              "所有编程相关的命名均不能以美元符号开始或结束",
+                              Severity.WARNING, line=i)
+
         for path, node in tree:
             if isinstance(node, javalang.tree.ClassDeclaration):
                 cn = node.name
-                modifiers = node.modifiers or []
-                is_exception = cn.endswith("Exception")
-                is_test = cn.endswith("Test")
-                if is_exception and not any(
-                    p2.name == cn for p2, _ in tree
-                    if isinstance(p2, javalang.tree.ClassDeclaration) and
-                    "extends" in str(p2) and "Exception" in str(p2)
-                ):
-                    is_exception = False
-                if is_test:
-                    pass  # Test naming is hard to validate without context
+                if cn.endswith("Exception") and not cn.endswith(("RuntimeException", "Exception")):
+                    pass  # Will be caught by pattern
+                elif not cn.endswith("Exception") and \
+                     any(cn + "Exception" == n2.name for p2, n2 in tree
+                         if isinstance(n2, javalang.tree.ClassDeclaration)):
+                    pass
+                if cn.startswith("Test") and cn.endswith("Test"):
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_TEST_NAMING",
+                              f"测试类 '{cn}' 应以被测试类名为前缀加 Test 结尾",
+                              Severity.INFO, line=l, column=c)
 
         for path, node in tree:
             if isinstance(node, javalang.tree.InterfaceDeclaration):
@@ -166,6 +179,19 @@ class AlibabaRulesChecker:
                     self._add(file_path, "ALIBABA_FLOAT_SUFFIX",
                               "浮点数类型的数值后缀应统一为大写的 D 或 F",
                               Severity.INFO, line=i, column=match.start())
+
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               re.search(r"(Const|Constant)s?$", node.name):
+                has_many_fields = sum(
+                    1 for f in (node.body or [])
+                    if isinstance(f, (javalang.tree.FieldDeclaration, javalang.tree.MethodDeclaration))
+                )
+                if has_many_fields > 15:
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_MANY_CONSTANTS",
+                              "不要使用一个常量类维护所有常量，应按功能进行归类分开维护",
+                              Severity.INFO, line=l, column=c)
 
     # ==================== (三) 代码格式 ====================
     def check_code_style(self, tree, file_path: str, content: str):
@@ -401,6 +427,49 @@ class AlibabaRulesChecker:
                                                   f"POJO 类属性 '{decl.name}' 必须使用包装数据类型，而非基本类型 '{ft.name}'",
                                                   Severity.WARNING, line=l, column=c)
 
+        for i, line in enumerate(lines, 1):
+            m = re.search(r"(\w+)\s*==\s*(\w+)\s*$", line)
+            if m:
+                a, b = m.group(1), m.group(2)
+                if a.lower() != b.lower() and \
+                   re.search(r"\b(float|double|Float|Double)\s+" + re.escape(a) + r"\b", line) or \
+                   re.search(r"\b(float|double|Float|Double)\s+" + re.escape(b) + r"\b", line):
+                    self._add(file_path, "ALIBABA_FLOAT_COMPARE",
+                              "浮点数之间的等值判断，基本数据类型不能使用 == 进行比较，包装数据类型不能使用 equals",
+                              Severity.WARNING, line=i)
+
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodInvocation) and node.member == "equals":
+                for p2, n2 in tree:
+                    if isinstance(n2, javalang.tree.VariableDeclaration) and \
+                       any(d.name == getattr(node.qualifier, "member", "") or
+                           d.name == str(node.qualifier) for d in n2.declarators):
+                        vtype = getattr(n2, "type", None)
+                        if vtype and hasattr(vtype, "name") and vtype.name == "BigDecimal":
+                            l, c = self._pos(node)
+                            self._add(file_path, "ALIBABA_BIGDECIMAL_EQUALS",
+                                      "BigDecimal 的等值比较应使用 compareTo() 方法，而不是 equals() 方法",
+                                      Severity.WARNING, line=l, column=c)
+                        break
+
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               any(node.name.endswith(s) for s in ("DO", "DTO", "VO", "BO", "PO", "POJO")):
+                for field in (node.body or []):
+                    if isinstance(field, javalang.tree.FieldDeclaration):
+                        for decl in field.declarators:
+                            if decl.initializer is not None:
+                                l, c = self._pos(decl)
+                                self._add(file_path, "ALIBABA_POJO_DEFAULT",
+                                          f"POJO 类 '{node.name}' 属性 '{decl.name}' 不要设定任何属性默认值",
+                                          Severity.WARNING, line=l, column=c)
+
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\.clone\s*\(\)", line) and not re.search(r"//.*\.clone", line):
+                self._add(file_path, "ALIBABA_CLONE_USAGE",
+                          "慎用 Object 的 clone 方法来拷贝对象，默认是浅拷贝",
+                          Severity.INFO, line=i)
+
     # ==================== (五) 日期时间 ====================
     def check_date(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_date"):
@@ -423,6 +492,11 @@ class AlibabaRulesChecker:
             if re.search(r"YYYY", line) and not re.search(r"//\s*", line):
                 self._add(file_path, "ALIBABA_DATE_FORMAT_YEAR",
                           "日期格式化时表示年份应使用小写 yyyy，大写 YYYY 表示 week in which year",
+                          Severity.WARNING, line=i)
+
+            if re.search(r"365", line) and re.search(r"(day|year|date|DAYS|Calendar)", line, re.IGNORECASE):
+                self._add(file_path, "ALIBABA_HARDCODED_365",
+                          "禁止在程序中写死一年为 365 天，应使用 LocalDate.lengthOfYear() 等方式",
                           Severity.WARNING, line=i)
 
     # ==================== (六) 集合处理 ====================
@@ -514,6 +588,19 @@ class AlibabaRulesChecker:
                           "Map 的 value 不应存储 null 值，以免在使用 containsKey 判断时混淆",
                           Severity.WARNING, line=i)
 
+            if re.search(r"\.(keySet|values|entrySet)\s*\(\s*\)\s*\.\s*add\s*\(", line):
+                self._add(file_path, "ALIBABA_VIEW_ADD",
+                          "Map 的 keySet/values/entrySet 返回的集合不可添加元素",
+                          Severity.WARNING, line=i)
+
+            if re.search(r"\.addAll\s*\([^)]+\)", line):
+                prev_lines = [lines[j] for j in range(max(0, i-6), i-1)]
+                has_null_check = any("null" in pl for pl in prev_lines)
+                if not has_null_check:
+                    self._add(file_path, "ALIBABA_ADDALL_NPE",
+                              "使用 addAll 方法时，要对输入的集合参数进行 NPE 判断",
+                              Severity.INFO, line=i)
+
     # ==================== (八) 控制语句 ====================
     def check_control(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_control"):
@@ -542,6 +629,35 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_TERNARY_NPE",
                           "三元表达式可能引发空指针 NPE，注意自动拆箱导致的 NullPointerException",
                           Severity.INFO, line=i)
+
+        # 8.2 - switch String null check
+        in_switch = False
+        for i, line in enumerate(lines, 1):
+            if re.search(r"switch\s*\(\s*\w+\s*\)", line):
+                in_switch = True
+                continue
+            if in_switch and re.search(r"^\s*\}\s*$", line):
+                in_switch = False
+            if in_switch and re.search(r"case\s+", line):
+                self._add(file_path, "ALIBABA_SWITCH_STRING",
+                          "当 switch 括号内的变量类型为 String 并且此变量为外部参数时，必须先进行 null 判断",
+                          Severity.INFO, line=i)
+                in_switch = False
+
+        # 8.7 - if-else depth (simplified check for nested if)
+        if_depth = 0
+        max_depth = 0
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped.startswith("if") or stripped.startswith("else if"):
+                if_depth += 1
+                max_depth = max(max_depth, if_depth)
+            elif stripped.startswith("}") or stripped.startswith("}"):
+                if_depth = max(0, if_depth - 1)
+        if max_depth > 3:
+            self._add(file_path, "ALIBABA_IF_DEPTH",
+                      "if-else 层级超过 3 层，建议使用卫语句、策略模式或状态模式重构",
+                      Severity.INFO, line=0)
 
     # ==================== (七) 并发处理 ====================
     def check_concurrency(self, tree, file_path: str, content: str):
@@ -588,6 +704,37 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_TRYLOCK_CHECK",
                           "tryLock() 调用后必须检查返回值",
                           Severity.WARNING, line=i)
+
+        for path, node in tree:
+            if isinstance(node, javalang.tree.VariableDeclaration):
+                vtype = str(getattr(node, "type", ""))
+                if "ThreadLocal" in vtype:
+                    for decl in node.declarators:
+                        after = content[decl.position.offset:decl.position.offset + 5000] if decl.position else ""
+                        if ".remove()" not in after and ".set(null)" not in after:
+                            l, c = self._pos(decl)
+                            self._add(file_path, "ALIBABA_THREADLOCAL_CLEANUP",
+                                      "必须回收自定义的 ThreadLocal 变量记录的当前线程值，应在 finally 中调用 remove()",
+                                      Severity.WARNING, line=l, column=c)
+
+        for path, node in tree:
+            if isinstance(node, javalang.tree.VariableDeclaration):
+                vtype = str(getattr(node, "type", ""))
+                if "ThreadLocal" in vtype:
+                    mods = node.modifiers or []
+                    if "static" not in mods:
+                        for decl in node.declarators:
+                            l, c = self._pos(decl)
+                            self._add(file_path, "ALIBABA_THREADLOCAL_STATIC",
+                                      "ThreadLocal 对象必须使用 static 修饰",
+                                      Severity.WARNING, line=l, column=c)
+
+        for i, line in enumerate(lines, 1):
+            if re.search(r"Random\s+\w+\s*=\s*new\s+Random\b", line) and \
+               not re.search(r"//.*", line):
+                self._add(file_path, "ALIBABA_RANDOM_INSTANCE",
+                          "避免 Random 实例被多线程使用，推荐使用 ThreadLocalRandom",
+                          Severity.INFO, line=i)
 
     # ==================== (九) 注释规约 ====================
     def check_comment(self, tree, file_path: str, content: str):
