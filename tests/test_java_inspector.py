@@ -1231,5 +1231,112 @@ class TestSonarQubeFull(unittest.TestCase):
         self.assertGreaterEqual(len(r), 1)
 
 
+class TestSonarQubeFourth(unittest.TestCase):
+    def setUp(self):
+        self.config = InspectionConfig()
+        for cat in ['sonar_security_extra', 'sonar_concurrency', 'sonar_code_quality', 'sonar_java_api']:
+            self.config.config['rules'][cat] = {'enabled': True}
+        self.inspector = JavaCodeInspector(self.config)
+
+    def _check(self, code, rule_id):
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            return [i for i in issues if i.rule_id == rule_id]
+        finally:
+            os.unlink(tmp)
+
+    # ==================== Security Extra ====================
+    def test_sonar_hardcoded_uri(self):
+        code = 'class Foo { String url = "https://example.com/api/v1/users"; }'
+        r = self._check(code, 'SONAR_HARDCODED_URI')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_cookie_secure(self):
+        code = 'class Foo { void bar() { cookie.setSecure(false); } }'
+        r = self._check(code, 'SONAR_COOKIE_SECURE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_predictable_random(self):
+        code = 'class Foo { java.util.Random r = new java.util.Random(); }'
+        r = self._check(code, 'SONAR_PREDICTABLE_RANDOM')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_ecb_mode(self):
+        code = 'class Foo { String alg = "AES/ECB/PKCS5Padding"; }'
+        r = self._check(code, 'SONAR_ECB_MODE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_jndi_lookup(self):
+        code = 'class Foo { void bar() throws Exception { new javax.naming.InitialContext().lookup("x"); } }'
+        r = self._check(code, 'SONAR_JNDI_LOOKUP')
+        self.assertGreaterEqual(len(r), 1)
+
+    # ==================== Concurrency ====================
+    def test_sonar_wait_sync(self):
+        code = 'class Foo { void bar() throws Exception { Object o = new Object(); o.wait(); } }'
+        r = self._check(code, 'SONAR_WAIT_SYNC')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_threadlocal_static(self):
+        code = 'class Foo { ThreadLocal<Integer> tl = new ThreadLocal<>(); }'
+        r = self._check(code, 'SONAR_THREADLOCAL_STATIC')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_servlet_input(self):
+        code = 'class Foo { void bar() { String s = request.getParameter("x"); } }'
+        r = self._check(code, 'SONAR_SERVLET_INPUT')
+        self.assertGreaterEqual(len(r), 1)
+
+    # ==================== Code Quality ====================
+    def test_sonar_finalize_call(self):
+        code = 'class Foo { protected void finalize() { System.out.println("x"); } }'
+        r = self._check(code, 'SONAR_FINALIZE_CALL')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_cloneable(self):
+        code = 'class Foo implements Cloneable { int x; }'
+        r = self._check(code, 'SONAR_CLONEABLE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_subclass_equals(self):
+        code = 'class Parent { } class Child extends Parent { public boolean equals(Object o) { return false; } }'
+        r = self._check(code, 'SONAR_SUBCLASS_EQUALS')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_stream_peek(self):
+        code = 'import java.util.*; class Foo { void bar() { List.of(1).stream().peek(x -> {}); } }'
+        r = self._check(code, 'SONAR_STREAM_PEEK')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_single_branch_switch(self):
+        code = 'class Foo { void bar(int x) { switch(x) { case 1: break; } } }'
+        r = self._check(code, 'SONAR_SINGLE_BRANCH_SWITCH')
+        self.assertGreaterEqual(len(r), 1)
+
+    # ==================== Java API ====================
+    def test_sonar_equals_asymmetry(self):
+        code = 'class Foo { public boolean equals(Object o) { return o instanceof Foo; } }'
+        r = self._check(code, 'SONAR_EQUALS_ASYMMETRY')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_compare_to_equals(self):
+        code = 'class Foo implements Comparable<Foo> { public int compareTo(Foo o) { return 0; } }'
+        r = self._check(code, 'SONAR_COMPARABLE_EQUALS')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_class_equals(self):
+        code = 'class Foo { private int x; private int y; }'
+        r = self._check(code, 'SONAR_CLASS_EQUALS')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_optional_null(self):
+        code = 'class Foo { void bar() { java.util.Optional<String> opt = null; } }'
+        r = self._check(code, 'SONAR_OPTIONAL_NULL')
+        self.assertGreaterEqual(len(r), 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
