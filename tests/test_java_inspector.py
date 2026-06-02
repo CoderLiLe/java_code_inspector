@@ -2354,5 +2354,73 @@ class TestSonarQubeFifteen(unittest.TestCase):
         self.assertGreaterEqual(len(r), 1)
 
 
+class TestSonarQubeSixteen(unittest.TestCase):
+    def setUp(self):
+        self.config = InspectionConfig()
+        for cat in ['sonar_json_xml', 'sonar_nio_reflection', 'sonar_datetime_extra', 'sonar_sql_general']:
+            self.config.config['rules'][cat] = {'enabled': True}
+        self.inspector = JavaCodeInspector(self.config)
+
+    def _check(self, code, rule_id):
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            return [i for i in issues if i.rule_id == rule_id]
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_xml_decoder(self):
+        code = 'class Foo { void bar() { new java.beans.XMLDecoder(null); } }'
+        r = self._check(code, 'SONAR_XML_DECODER')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_xxe_parser(self):
+        code = 'class Foo { void bar() throws Exception { javax.xml.parsers.DocumentBuilderFactory f = javax.xml.parsers.DocumentBuilderFactory.newInstance(); f.newDocumentBuilder().parse("x"); } }'
+        r = self._check(code, 'SONAR_XXE_PARSER')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_set_accessible(self):
+        code = 'class Foo { void bar() throws Exception { java.lang.reflect.Field f = null; f.setAccessible(true); } }'
+        r = self._check(code, 'SONAR_SET_ACCESSIBLE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_method_handle(self):
+        code = 'import java.lang.invoke.MethodHandle; class Foo { void bar() { MethodHandle h = new MethodHandle(); } }'
+        r = self._check(code, 'SONAR_METHOD_HANDLE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_mutable_date_constant(self):
+        code = 'class Foo { public static final java.util.Calendar CAL = java.util.Calendar.getInstance(); }'
+        r = self._check(code, 'SONAR_MUTABLE_DATE_CONSTANT')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_queryparam_validation(self):
+        code = 'class Foo { void bar(@javax.ws.rs.QueryParam("x") String x) {} }'
+        r = self._check(code, 'SONAR_QUERYPARAM_VALIDATION')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_sql_concat_injection(self):
+        code = 'class Foo { void bar() throws Exception { java.sql.Statement s = null; s.executeQuery("SELECT * FROM " + "table"); } }'
+        r = self._check(code, 'SONAR_SQL_CONCAT_INJECTION')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_format_sql_injection(self):
+        code = 'class Foo { void bar() { String q = String.format("SELECT %s FROM table", "x"); } }'
+        r = self._check(code, 'SONAR_FORMAT_SQL_INJECTION')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_json_ignore_redundant(self):
+        code = 'class Foo { @com.fasterxml.jackson.annotation.JsonIgnore public String getX() { return ""; } }'
+        r = self._check(code, 'SONAR_JSON_IGNORE_REDUNDANT')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_files_lines_stream(self):
+        code = 'class Foo { void bar() throws Exception { java.nio.file.Files.lines(java.nio.file.Paths.get(".")); } }'
+        r = self._check(code, 'SONAR_FILES_LINES_STREAM')
+        self.assertGreaterEqual(len(r), 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
