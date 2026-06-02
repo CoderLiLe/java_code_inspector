@@ -2296,5 +2296,63 @@ class TestSonarQubeFourteen(unittest.TestCase):
         self.assertGreaterEqual(len(r), 1)
 
 
+class TestSonarQubeFifteen(unittest.TestCase):
+    def setUp(self):
+        self.config = InspectionConfig()
+        for cat in ['sonar_http_web', 'sonar_jdbc_jpa', 'sonar_testing_extra', 'sonar_quality_extra']:
+            self.config.config['rules'][cat] = {'enabled': True}
+        self.inspector = JavaCodeInspector(self.config)
+
+    def _check(self, code, rule_id):
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            return [i for i in issues if i.rule_id == rule_id]
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_xss_direct_output(self):
+        code = 'class Foo { void bar(javax.servlet.http.HttpServletResponse response, String s) { response.getWriter().write("data"); } }'
+        r = self._check(code, 'SONAR_XSS_DIRECT_OUTPUT')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_cache_control(self):
+        code = 'class Foo { void bar(javax.servlet.http.HttpServletResponse response) { response.setHeader("Cache-Control","public"); } }'
+        r = self._check(code, 'SONAR_CACHE_CONTROL')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_hsts_header(self):
+        code = 'class Foo { void bar(javax.servlet.http.HttpServletResponse response) { response.setHeader("Strict-Transport-Security","includeSubDomains"); } }'
+        r = self._check(code, 'SONAR_HSTS_HEADER')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_jdbc_hardcoded(self):
+        code = 'class Foo { void bar() throws Exception { java.sql.DriverManager.getConnection("jdbc:h2:file:test", "sa", ""); } }'
+        r = self._check(code, 'SONAR_JDBC_HARDCODED')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_sql_concat_prepared(self):
+        code = 'class Foo { void bar() throws Exception { java.sql.Connection conn = null; java.sql.PreparedStatement p = conn.prepareStatement("SELECT * FROM " + "table"); } }'
+        r = self._check(code, 'SONAR_SQL_CONCAT_PREPARED')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_test_without_assertion_v2(self):
+        code = 'import org.junit.jupiter.api.Test; class Foo { @Test void bar() { int x = 1; } }'
+        r = self._check(code, 'SONAR_TEST_WITHOUT_ASSERTION_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_disabled_without_comment(self):
+        code = 'import org.junit.jupiter.api.Disabled; @Disabled class Foo {}'
+        r = self._check(code, 'SONAR_DISABLED_WITHOUT_COMMENT')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_deprecated_javadoc(self):
+        code = '@Deprecated class Foo {}'
+        r = self._check(code, 'SONAR_DEPRECATED_JAVADOC')
+        self.assertGreaterEqual(len(r), 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
