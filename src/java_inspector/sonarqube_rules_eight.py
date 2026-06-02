@@ -198,9 +198,9 @@ class SonarQubeCheckerEight:
                     body_str = str(body).replace(" ", "").replace("\n", "")
                     param_name = str(params[0]).strip()
                     patterns = [
-                        param_name + "->" + param_name + ".\\w+(",
-                        param_name + "->\\w+." + param_name,
-                        "(" + param_name + ")->" + param_name + ".\\w+(",
+                        param_name + "->" + param_name + "\\.\\w+\\(",
+                        param_name + "->\\w+\\." + param_name,
+                        "\\(" + param_name + "\\)->" + param_name + "\\.\\w+\\(",
                     ]
                     for pat in patterns:
                         if re.match(pat, body_str):

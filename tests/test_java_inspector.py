@@ -2422,5 +2422,73 @@ class TestSonarQubeSixteen(unittest.TestCase):
         self.assertGreaterEqual(len(r), 1)
 
 
+class TestSonarQubeSeventeen(unittest.TestCase):
+    def setUp(self):
+        self.config = InspectionConfig()
+        for cat in ['sonar_cdi_injection', 'sonar_lambda_stream', 'sonar_generics_types', 'sonar_enums_annotations', 'sonar_misc_seventeen']:
+            self.config.config['rules'][cat] = {'enabled': True}
+        self.inspector = JavaCodeInspector(self.config)
+
+    def _check(self, code, rule_id):
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            return [i for i in issues if i.rule_id == rule_id]
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_field_injection_v2(self):
+        code = 'class Foo { @javax.inject.Inject String bar; }'
+        r = self._check(code, 'SONAR_FIELD_INJECTION_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_stream_to_list_v2(self):
+        code = 'import java.util.stream.*; class Foo { void bar() { java.util.List.of(1).stream().collect(Collectors.toList()); } }'
+        r = self._check(code, 'SONAR_STREAM_TO_LIST_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_unused_type_param_v2(self):
+        code = 'class Foo { <T> void bar() { int x = 1; } }'
+        r = self._check(code, 'SONAR_UNUSED_TYPE_PARAM_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_abs_neg_v2(self):
+        code = 'class Foo { void bar() { Math.abs(-1); } }'
+        r = self._check(code, 'SONAR_ABS_NEG_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_enum_naming(self):
+        code = 'enum FOO {}'
+        r = self._check(code, 'SONAR_ENUM_NAMING')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_abstract_public_ctor(self):
+        code = 'abstract class Foo { public Foo() {} }'
+        r = self._check(code, 'SONAR_ABSTRACT_PUBLIC_CTOR')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_many_type_params(self):
+        code = 'class Foo<A,B,C,D,E> {}'
+        r = self._check(code, 'SONAR_MANY_TYPE_PARAMS')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_raw_type_v2(self):
+        code = 'class Foo { List myField; }'
+        r = self._check(code, 'SONAR_RAW_TYPE_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_magic_sleep(self):
+        code = 'class Foo { void bar() throws Exception { Thread.sleep(30000); } }'
+        r = self._check(code, 'SONAR_MAGIC_SLEEP')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_stream_intermediate_v2(self):
+        code = 'import java.util.stream.*; class Foo { void bar() { java.util.List.of(1).stream().filter(x -> true).map(x -> x); } }'
+        r = self._check(code, 'SONAR_STREAM_INTERMEDIATE_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
