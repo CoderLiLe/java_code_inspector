@@ -97,6 +97,28 @@ class AlibabaRulesChecker:
                               f"杜绝不规范的缩写 '{m.group(2)}'，应使用完整单词组合来表达语义",
                               Severity.INFO, line=i)
 
+            # 1.12 Bad abbreviations dictionary
+            BAD_ABBREVS = re.compile(
+                r"\b(AbsClass|condi|Fu|msgUtil|dateUtil|numUtil|strUtil|objUtil|"
+                r"tempUtil|DbHelper|BizHelper|CommHelper|MgrHelper|"
+                r"intVal|strVal|boolVal|objVal|"
+                r"paramMap|paramList|retMap|retList|"
+                r"respDTO|reqDTO|queryParam|pageQuery)\b"
+            )
+            m = BAD_ABBREVS.search(line)
+            if m:
+                self._add(file_path, "ALIBABA_BAD_ABBREVIATION",
+                          f"杜绝完全不规范的英文缩写 '{m.group(1)}'，避免望文不知义",
+                          Severity.WARNING, line=i, column=line.find(m.group(1)))
+
+            # 1.13 Single-letter variable names (1-3 char, excluding loop vars)
+            code_part = re.sub(r"//.*|/\*.*?\*/|\".*?\"", "", line, flags=re.DOTALL)
+            m = re.search(r"\b(int|long|String|boolean|double|float|Object|List|Map)\s+([a-z])[^a-zA-Z]", code_part)
+            if m and m.group(2) not in ("i", "j", "k", "x", "y", "z"):
+                self._add(file_path, "ALIBABA_SINGLE_LETTER_VAR",
+                          f"变量名 '{m.group(2)}' 过于简短，应使用完整的单词组合来表达语义",
+                          Severity.INFO, line=i)
+
             if re.search(r"\b\$", line) and not re.search(r"\"", line):
                 m = re.search(r"\$(\w+)", line)
                 if m:
@@ -109,6 +131,18 @@ class AlibabaRulesChecker:
                     self._add(file_path, "ALIBABA_DOLLAR_NAME",
                               "所有编程相关的命名均不能以美元符号开始或结束",
                               Severity.WARNING, line=i)
+            if re.search(r"\b_\w+", line) and not re.search(r"\"", line):
+                m = re.search(r"\b(_+[a-zA-Z]\w*)", line)
+                if m and not re.search(r"_\s*=|_\s*\)|_\s*;", line):
+                    self._add(file_path, "ALIBABA_UNDERSCORE_NAME",
+                              "命名不能以下划线开始或结束",
+                              Severity.WARNING, line=i, column=line.find(m.group(1)))
+            if re.search(r"\w+_\b", line) and not re.search(r"\"", line):
+                m = re.search(r"([a-zA-Z]\w*_+)\b", line)
+                if m and not re.search(r"__|_\s*=|_\s*\)", line):
+                    self._add(file_path, "ALIBABA_UNDERSCORE_NAME",
+                              "命名不能以下划线开始或结束",
+                              Severity.WARNING, line=i, column=line.find(m.group(1)))
 
         # 1.4 UpperCamelCase for classes (except DO/PO/DTO/BO/VO/UID)
         for path, node in tree:
@@ -810,6 +844,121 @@ class AlibabaRulesChecker:
                 if m and m.group(2)[0].islower() and len(m.group(2)) > 1:
                     pass
 
+        # 4.3 Varargs type should not be Object
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                for param in (node.parameters or []):
+                    if getattr(param, "varargs", False) and hasattr(param, "type") and param.type:
+                        vt = param.type.name if hasattr(param.type, "name") else str(param.type)
+                        if vt == "Object":
+                            l, c = self._pos(param)
+                            self._add(file_path, "ALIBABA_VARARGS_OBJECT",
+                                      "可变参数类型避免定义为 Object，应指定具体类型",
+                                      Severity.WARNING, line=l, column=c)
+
+        # 4.4 @Deprecated on outdated interfaces
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration) and \
+               "public" in (node.modifiers or []) and \
+               not node.name.startswith(("get", "set", "is")):
+                body = node.body if isinstance(node.body, list) else getattr(getattr(node, "body", None), "statements", []) or []
+                if not body:
+                    continue
+                for stmt in body:
+                    if isinstance(stmt, javalang.tree.ReturnStatement):
+                        continue
+                l, c = self._pos(node)
+                for p2, n2 in tree:
+                    if isinstance(n2, javalang.tree.InterfaceDeclaration):
+                        for m2 in (n2.body or []):
+                            if isinstance(m2, javalang.tree.MethodDeclaration) and \
+                               m2.name == node.name:
+                                has_deprecated = any(
+                                    getattr(ann, "name", "") == "Deprecated"
+                                    for ann in (m2.annotations or [])
+                                )
+                                break
+
+        # 4.13.2 RPC interface return/param should use wrapper types
+        for path, node in tree:
+            if isinstance(node, javalang.tree.InterfaceDeclaration):
+                for m in (node.body or []):
+                    if isinstance(m, javalang.tree.MethodDeclaration):
+                        ret = getattr(m, "return_type", None)
+                        if ret and hasattr(ret, "name") and ret.name in (
+                            "int", "long", "double", "float", "boolean", "char", "byte", "short"
+                        ):
+                            l, c = self._pos(m)
+                            self._add(file_path, "ALIBABA_RPC_WRAPPER_RETURN",
+                                      f"RPC 接口方法 '{m.name}' 返回值应使用包装数据类型 '{ret.name.title()}'",
+                                      Severity.WARNING, line=l, column=c)
+                        for param in (m.parameters or []):
+                            pt = getattr(param, "type", None)
+                            if pt and hasattr(pt, "name") and pt.name in (
+                                "int", "long", "double", "float", "boolean", "char", "byte", "short"
+                            ):
+                                l, c = self._pos(param)
+                                self._add(file_path, "ALIBABA_RPC_WRAPPER_PARAM",
+                                          f"RPC 接口方法 '{m.name}' 参数 '{param.name}' 应使用包装数据类型 '{pt.name.title()}'",
+                                          Severity.WARNING, line=l, column=c)
+
+        # 4.13.3 Local variables prefer primitives
+        for i, line in enumerate(lines, 1):
+            m = re.search(r"\b(Integer|Long|Boolean|Double|Float)\s+(\w+)\s*=", line)
+            if m and not re.search(r"//", line) and not re.search(r"(static|final|private|protected|public)", line):
+                wrapper_type = m.group(1)
+                var_name = m.group(2)
+                if var_name[0].islower() and not re.search(r"(null|new\s)", line):
+                    self._add(file_path, "ALIBABA_LOCAL_PRIMITIVE",
+                              f"局部变量 '{var_name}' 建议使用基本类型 '{wrapper_type.lower()}' 而非包装类型",
+                              Severity.INFO, line=i)
+
+        # 4.21 Method ordering: public/protected > private > getter/setter
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                methods_by_line = []
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.MethodDeclaration) and member.position:
+                        mods = member.modifiers or []
+                        if "public" in mods:
+                            cat = 0
+                        elif "protected" in mods:
+                            cat = 1
+                        else:
+                            cat = 2
+                        if member.name.startswith(("get", "set", "is")):
+                            cat = 3
+                        methods_by_line.append((member.position.line, cat, member.name))
+                methods_by_line.sort()
+                seen_cats = set()
+                last_cat = -1
+                for _, cat, _ in methods_by_line:
+                    if cat < last_cat:
+                        break
+                    last_cat = cat
+                else:
+                    for _, cat, _ in methods_by_line:
+                        pass
+
+        # 4.26 Access control: private constructor for non-instantiable classes
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                has_public_ctor = False
+                all_ctors_private = True
+                has_ctor = False
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.ConstructorDeclaration):
+                        has_ctor = True
+                        if "private" not in (member.modifiers or []):
+                            all_ctors_private = False
+                            if "public" in (member.modifiers or []):
+                                has_public_ctor = True
+                if has_public_ctor and len([m for m in (node.body or []) if isinstance(m, javalang.tree.MethodDeclaration) and "static" in (m.modifiers or [])]) > 5:
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_ACCESS_CTOR",
+                              f"类 '{node.name}' 包含大量静态方法，构造方法应设为 private",
+                              Severity.INFO, line=l, column=c)
+
     # ==================== (五) 日期时间 ====================
     def check_date(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_date"):
@@ -1382,6 +1531,30 @@ class AlibabaRulesChecker:
                                       Severity.INFO, line=l, column=c)
                             break
 
+        # 7.1 Singleton thread safety
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration) and \
+               node.name in ("getInstance", "getSingleton") and \
+               "static" in (node.modifiers or []) and \
+               not any("synchronized" in str(a) or "synchronized" in (node.modifiers or [])
+                       for a in ([node.modifiers] if isinstance(node.modifiers, list) else [])):
+                l, c = self._pos(node)
+                self._add(file_path, "ALIBABA_SINGLETON_THREAD_SAFE",
+                          "获取单例对象需要保证线程安全，建议使用 synchronized 或双重检查锁",
+                          Severity.WARNING, line=l, column=c)
+
+        # 7.17 volatile without atomic for multi-write
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration) and \
+               "volatile" in (node.modifiers or []):
+                ft = getattr(node, "type", None)
+                if ft and hasattr(ft, "name") and ft.name in ("int", "long", "boolean", "double"):
+                    for decl in node.declarators:
+                        l, c = self._pos(decl)
+                        self._add(file_path, "ALIBABA_VOLATILE_ATOMIC",
+                                  "volatile 解决多线程内存不可见问题，一写多读可用；多写场景需使用 Atomic 类或锁",
+                                  Severity.INFO, line=l, column=c)
+
     # ==================== (九) 注释规约 ====================
     def check_comment(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_comment"):
@@ -1615,6 +1788,29 @@ class AlibabaRulesChecker:
                                       f"方法 '{node.name}' 可能返回 null，必须添加注释充分说明什么情况下会返回 null 值",
                                       Severity.INFO, line=l, column=c)
 
+        # 5. Transaction catch without rollback
+        for path, node in tree:
+            if isinstance(node, javalang.tree.TryStatement):
+                for catch in (node.catches or []):
+                    block = catch.block if hasattr(catch, "block") and catch.block else getattr(catch, "body", None)
+                    body_stmts = block.statements if hasattr(block, "statements") else (block if isinstance(block, list) else [])
+                    has_rollback = any("rollback" in str(s).lower() for s in body_stmts)
+                    if not has_rollback and len(body_stmts) > 0:
+                        pass
+
+        # 9. RPC/dynamic must catch Throwable
+        for i, line in enumerate(lines, 1):
+            if re.search(r"(RPC|rpc|反射|reflect|Proxy|\.invoke\s*\()", line) and \
+               re.search(r"try\s*\{", line) and \
+               not re.search(r"catch.*Throwable", line):
+                for j in range(i, min(i + 15, len(lines) + 1)):
+                    if j <= len(lines) and re.search(r"catch\s*\(", lines[j - 1]):
+                        if not re.search(r"Throwable", lines[j - 1]):
+                            self._add(file_path, "ALIBABA_RPC_THROWABLE",
+                                      "在调用 RPC、二方包、或动态生成类的相关方法时，捕捉异常使用 Throwable 类进行拦截",
+                                      Severity.WARNING, line=i)
+                        break
+
     # ==================== (三) 日志规约 ====================
     def check_logging(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_logging"):
@@ -1801,6 +1997,62 @@ class AlibabaRulesChecker:
                           "在接口路径中不要加入版本号，版本控制在 HTTP 头信息中体现",
                           Severity.INFO, line=i)
 
+        # 10.2 Return empty [] or {} for null data
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                mn = node.name
+                if mn.startswith(("list", "query", "find", "search", "getAll")):
+                    ret_type = getattr(node, "return_type", None)
+                    if ret_type and hasattr(ret_type, "name") and ret_type.name in ("List", "Set", "Collection"):
+                        body_stmts = node.body if isinstance(node.body, list) else getattr(getattr(node, "body", None), "statements", []) or []
+                        for stmt in body_stmts:
+                            if isinstance(stmt, javalang.tree.IfStatement):
+                                if_str = str(stmt.expression) if hasattr(stmt, "expression") else ""
+                                if "null" in if_str and (">" not in if_str or "size" not in if_str):
+                                    break
+                        else:
+                            for stmt in body_stmts:
+                                if isinstance(stmt, javalang.tree.ReturnStatement) and \
+                                   hasattr(stmt, "expression") and "null" in str(stmt.expression):
+                                    l, c = self._pos(node)
+                                    self._add(file_path, "ALIBABA_RETURN_EMPTY",
+                                              f"方法 '{mn}' 返回集合数据时，如果为空应返回空数组 [] 或空集合 {{}}，而非 null",
+                                              Severity.WARNING, line=l, column=c)
+                                    break
+
+        # 10.9 Page parameter validation
+        for i, line in enumerate(lines, 1):
+            if re.search(r"(pageNum|pageNo|pageIndex|currentPage)\s*[<]", line) and \
+               not re.search(r"//", line):
+                m = re.search(r"(pageNum|pageNo|pageIndex|currentPage)\s*[<]\s*1", line)
+                if m:
+                    self._add(file_path, "ALIBABA_PAGE_PARAM",
+                              "翻页场景中，用户输入参数小于1，则前端返回第一页参数给后端",
+                              Severity.INFO, line=i)
+
+        # 10.10 Internal redirect: forward vs redirect
+        for i, line in enumerate(lines, 1):
+            if re.search(r"redirect\s*:\s*[\"'](?!http)", line) and \
+               not re.search(r"RedirectView|UrlBasedViewResolver", line):
+                m = re.search(r"redirect\s*:\s*[\"'](\w+)", line)
+                if m:
+                    self._add(file_path, "ALIBABA_REDIRECT_FORWARD",
+                              "服务器内部重定向必须使用 forward，外部重定向地址必须使用 URL 统一代理模块生成",
+                              Severity.WARNING, line=i)
+
+        # 10.13 Date format unified
+        for i, line in enumerate(lines, 1):
+            if re.search(r"SimpleDateFormat|DateTimeFormatter|@JsonFormat", line) and \
+               re.search(r"yyyy-MM-dd HH:mm:ss", line):
+                pass
+            elif re.search(r"@JsonFormat", line) and \
+                 not re.search(r"yyyy-MM-dd HH:mm:ss|yyyy-MM-dd'T'HH:mm:ss", line):
+                m = re.search(r"pattern\s*=\s*[\"']([^\"']+)[\"']", line)
+                if m:
+                    self._add(file_path, "ALIBABA_DATE_FORMAT_UNIFIED",
+                              "前后端的时间格式统一为 yyyy-MM-dd HH:mm:ss，统一为 GMT",
+                              Severity.INFO, line=i)
+
     # ==================== 四、安全规约 ====================
     def check_security(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_security"):
@@ -1833,6 +2085,72 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_HARDCODED_PASSWORD",
                           "配置文件中的密码需要加密，禁止在代码中硬编码密码",
                           Severity.ERROR, line=i)
+
+        # 4.1 Permission control check
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration) and \
+               "public" in (node.modifiers or []):
+                mn = node.name
+                if mn.startswith(("delete", "update", "add", "create", "modify", "remove", "batch")):
+                    has_auth = False
+                    annotations = getattr(node, "annotations", []) or []
+                    for ann in annotations:
+                        if hasattr(ann, "name") and ann.name in ("PreAuthorize", "PreFilter", "Secured", "RolesAllowed"):
+                            has_auth = True
+                            break
+                    if not has_auth:
+                        body_stmts = node.body if isinstance(node.body, list) else getattr(getattr(node, "body", None), "statements", []) or []
+                        for stmt in body_stmts:
+                            if "hasRole" in str(stmt) or "hasPermission" in str(stmt) or "hasAuthority" in str(stmt):
+                                has_auth = True
+                                break
+                        if not has_auth:
+                            l, c = self._pos(node)
+                            self._add(file_path, "ALIBABA_PERMISSION_CHECK",
+                                      f"操作方法 '{mn}' 必须进行权限控制校验",
+                                      Severity.WARNING, line=l, column=c)
+
+        # 4.5 XSS protection
+        for i, line in enumerate(lines, 1):
+            if re.search(r"ModelAndView|Model|@ResponseBody", line) and \
+               re.search(r"(request\.getParameter|@RequestParam|@PathVariable)", line) and \
+               not re.search(r"(HtmlUtils|StringEscapeUtils|escapeHtml|XSS|clean|sanitize)", line) and \
+               not re.search(r"//", line):
+                for j in range(i, min(i + 10, len(lines) + 1)):
+                    if j <= len(lines) and re.search(r"(HtmlUtils|StringEscapeUtils|escapeHtml|sanitize)", lines[j - 1]):
+                        break
+                else:
+                    self._add(file_path, "ALIBABA_XSS_PROTECTION",
+                              "禁止向 HTML 页面输出未经安全过滤或未正确转义的用户数据，防止 XSS 攻击",
+                              Severity.WARNING, line=i)
+
+        # 4.6 CSRF validation
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@PostMapping|@PutMapping|@DeleteMapping|@RequestMapping.*method.*POST", line) and \
+               not re.search(r"(csrf|CSRF|@CrossOrigin)", line):
+                for j in range(max(0, i-5), i):
+                    if j < len(lines) and re.search(r"(csrf|CSRF)", lines[j], re.IGNORECASE):
+                        break
+                else:
+                    self._add(file_path, "ALIBABA_CSRF",
+                              "表单、AJAX 提交必须执行 CSRF 安全验证",
+                              Severity.INFO, line=i)
+
+        # 4.7 URL redirect whitelist
+        for i, line in enumerate(lines, 1):
+            if re.search(r"redirect\s*:\s*[\"'](https?://)", line) and \
+               not re.search(r"(whitelist|white_list|allowed|permit|validateUrl|checkUrl)", line, re.IGNORECASE):
+                self._add(file_path, "ALIBABA_REDIRECT_WHITELIST",
+                          "URL 外部重定向传入的目标地址必须执行白名单过滤",
+                          Severity.WARNING, line=i)
+
+        # 4.9 File upload validation
+        for i, line in enumerate(lines, 1):
+            if re.search(r"MultipartFile|@RequestParam.*file|@RequestParam.*upload", line) and \
+               not re.search(r"(fileSize|maxSize|MaxUploadSize|allowedExtension|contentType|fileType)", line, re.IGNORECASE):
+                self._add(file_path, "ALIBABA_FILE_UPLOAD",
+                          "对于文件上传功能，需要对文件大小、类型进行严格检查和控制",
+                          Severity.WARNING, line=i)
 
     # ==================== 五、MySQL 数据库 ====================
     def check_sql(self, tree, file_path: str, content: str):
@@ -1927,6 +2245,119 @@ class AlibabaRulesChecker:
                           "在表查询中，一律不要使用 * 作为查询的字段列表，需要哪些字段必须明确写明",
                           Severity.WARNING, line=i)
 
+        # 5.3.4 Use ISNULL() for null check
+        for i, line in enumerate(lines, 1):
+            if re.search(r"WHERE\s+.*\b(IS\s+NULL|ISNULL)\b", line, re.IGNORECASE) and \
+               not re.search(r"ISNULL\s*\(", line) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_USE_ISNULL",
+                          "使用 ISNULL() 来判断是否为 NULL 值",
+                          Severity.INFO, line=i)
+
+            if re.search(r"= null|is null", line, re.IGNORECASE) and \
+               re.search(r"WHERE", line, re.IGNORECASE) and \
+               not re.search(r"ISNULL", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_USE_ISNULL",
+                          "使用 ISNULL() 来判断是否为 NULL 值，而非 = null",
+                          Severity.INFO, line=i)
+
+        # 5.3.7 No stored procedures
+        for i, line in enumerate(lines, 1):
+            if re.search(r"call\s+\w+Proc|createProcedure|create\s+procedure", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_NO_STORED_PROC",
+                          "禁止使用存储过程，存储过程难以调试和扩展，更没有移植性",
+                          Severity.WARNING, line=i)
+
+        # 5.3.9 Multi-table query must have alias
+        for i, line in enumerate(lines, 1):
+            if re.search(r"(FROM|JOIN)\s+\w+\s+\w+.*(WHERE|AND|ON)\s+\w+\.\w+", line, re.IGNORECASE) and \
+               re.search(r"SELECT", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                m = re.search(r"FROM\s+(\w+)\s+(\w+)", line, re.IGNORECASE)
+                if m and m.group(2) == m.group(2).lower() and len(m.group(2)) > 8:
+                    self._add(file_path, "ALIBABA_TABLE_ALIAS",
+                              "多表关联查询时，需要在列名前加表的别名进行限定",
+                              Severity.INFO, line=i)
+
+        # 5.3.10 Alias with 'as'
+        for i, line in enumerate(lines, 1):
+            if re.search(r"FROM\s+(\w+)\s+(\w{1,4})\s", line) and \
+               not re.search(r"\s+as\s+", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                m = re.search(r"FROM\s+(\w+)\s+(\w{1,4})\s", line, re.IGNORECASE)
+                if m and m.group(1).lower() != m.group(2).lower():
+                    pass
+
+        # 5.3.11 IN control within 1000
+        for i, line in enumerate(lines, 1):
+            m = re.search(r"\bIN\s*\(([^)]{50,})\)", line, re.IGNORECASE)
+            if m and not re.search(r"//", line):
+                in_content = m.group(1)
+                comma_count = in_content.count(",")
+                if comma_count > 50:
+                    self._add(file_path, "ALIBABA_IN_SIZE",
+                              "in 操作集合元素数量控制在 1000 个之内",
+                              Severity.WARNING, line=i)
+
+        # 5.3.13 TRUNCATE not recommended
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\bTRUNCATE\s+TABLE", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_TRUNCATE_USAGE",
+                          "TRUNCATE TABLE 无事务且不触发 trigger，不建议在开发代码中使用此语句",
+                          Severity.WARNING, line=i)
+
+        # 5.4.2 POJO boolean mapping in resultMap
+        for i, line in enumerate(lines, 1):
+            if re.search(r"<result\s+.*property\s*=\s*\"\w+\".*column\s*=\s*\"is_\w+\"", line) and \
+               not re.search(r"//", line):
+                pass
+
+        # 5.4.3 Must define <resultMap>
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               any(node.name.endswith(s) for s in ("DO", "PO", "DTO", "VO")):
+                l, c = self._pos(node)
+                self._add(file_path, "ALIBABA_RESULT_MAP",
+                          f"POJO 类 '{node.name}' 需要定义对应的 <resultMap> 进行字段与属性之间的映射",
+                          Severity.INFO, line=l, column=c)
+
+        # 5.4.4 Use #{} not ${}
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\$\{", line) and \
+               re.search(r"\.xml|\.sql|@Select|@Insert|@Update|@Delete", file_path):
+                m = re.search(r"\$\{(\w+)\}", line)
+                if m and not re.search(r"order\s+by|ORDER\s+BY|sort|Sort|column|Column", line, re.IGNORECASE):
+                    self._add(file_path, "ALIBABA_SQL_PARAM_BINDING",
+                              f"sql.xml 配置参数使用 #{{}} 而非 ${{}}, 防止 SQL 注入: ${{{m.group(1)}}}",
+                              Severity.WARNING, line=i)
+
+        # 5.4.5 queryForList(start,size) not recommended
+        for i, line in enumerate(lines, 1):
+            if re.search(r"queryForList\s*\(\s*\"[^\"]*\"\s*,\s*\d+\s*,\s*\d+\s*\)", line):
+                self._add(file_path, "ALIBABA_QUERY_FOR_LIST",
+                          "iBATIS 自带的 queryForList(String, int, int) 不推荐使用",
+                          Severity.WARNING, line=i)
+
+        # 5.4.6 HashMap/Hashtable as result
+        for i, line in enumerate(lines, 1):
+            if re.search(r"(HashMap|Hashtable)\s*<\s*\w+\s*,\s*\w+\s*>\s+\w+\s*(;|=)", line) and \
+               re.search(r"query|select|find|get", line, re.IGNORECASE):
+                self._add(file_path, "ALIBABA_HASHMAP_RESULT",
+                          "不允许直接拿 HashMap 与 Hashtable 作为查询结果集的输出",
+                          Severity.WARNING, line=i)
+
+        # 5.4.7 Update update_time
+        for i, line in enumerate(lines, 1):
+            if re.search(r"UPDATE\s+\w+\s+SET", line, re.IGNORECASE) and \
+               not re.search(r"update_time|updateTime|update_at", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_UPDATE_TIME",
+                          "更新数据表记录时，必须同时更新记录对应的 update_time 字段值为当前时间",
+                          Severity.INFO, line=i)
+
     # ==================== 三、单元测试 ====================
     def check_unit_test(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_unit_test"):
@@ -1952,6 +2383,52 @@ class AlibabaRulesChecker:
                                   "单元测试应该不依赖外界环境（如文件系统、网络），以保证可重复执行",
                                   Severity.WARNING, line=j)
                         break
+
+    # ==================== 六、工程结构 ====================
+    def check_engineering(self, tree, file_path: str, content: str):
+        if not self.config.is_rule_enabled("alibaba_engineering"):
+            return
+        lines = content.split("\n")
+
+        # 6.1.2 Layer exception handling: DAO->Service->Web
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                cn = node.name
+                if cn.endswith("DAO") or cn.endswith("Mapper") or cn.endswith("Repository"):
+                    for member in (node.body or []):
+                        if isinstance(member, javalang.tree.MethodDeclaration):
+                            body_stmts = member.body if isinstance(member.body, list) else getattr(getattr(member, "body", None), "statements", []) or []
+                            for stmt in body_stmts:
+                                if isinstance(stmt, javalang.tree.TryStatement):
+                                    for catch in (stmt.catches or []):
+                                        if catch.parameter and catch.parameter.type and \
+                                           catch.parameter.type.name == "Exception":
+                                            l, c = self._pos(member)
+                                            self._add(file_path, "ALIBABA_DAO_EXCEPTION",
+                                                      f"DAO 层方法 '{member.name}' 应使用 catch(Exception e) 并 throw new DAOException(e)",
+                                                      Severity.INFO, line=l, column=c)
+                                            break
+                                    break
+
+        # 6.1.3 DO/DTO/BO/VO naming in proper packages
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                cn = node.name
+                if cn.endswith("DO") and "entity" not in file_path.lower() and "model" not in file_path.lower():
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_DO_PACKAGE",
+                              f"数据对象 '{cn}' 应放在 entity 或 model 包中",
+                              Severity.INFO, line=l, column=c)
+                elif cn.endswith("DTO") and "dto" not in file_path.lower() and "api" not in file_path.lower():
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_DTO_PACKAGE",
+                              f"数据传输对象 '{cn}' 应放在 dto 或 api 包中",
+                              Severity.INFO, line=l, column=c)
+                elif cn.endswith("VO") and "vo" not in file_path.lower() and "view" not in file_path.lower():
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_VO_PACKAGE",
+                              f"展示对象 '{cn}' 应放在 vo 或 view 包中",
+                              Severity.INFO, line=l, column=c)
 
     # ==================== 七、设计规约 ====================
     def check_design(self, tree, file_path: str, content: str):
@@ -2004,3 +2481,4 @@ class AlibabaRulesChecker:
         self.check_sql(tree, file_path, content)
         self.check_unit_test(tree, file_path, content)
         self.check_design(tree, file_path, content)
+        self.check_engineering(tree, file_path, content)

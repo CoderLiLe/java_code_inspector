@@ -36,6 +36,7 @@ class InspectionConfig:
                 "alibaba_sql": {"enabled": True},
                 "alibaba_unit_test": {"enabled": True},
                 "alibaba_design": {"enabled": True},
+                "alibaba_engineering": {"enabled": True},
                 "sonar_bugs": {"enabled": True},
                 "sonar_code_smell": {"enabled": True},
                 "sonar_security": {"enabled": True},
