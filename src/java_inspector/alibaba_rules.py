@@ -380,6 +380,32 @@ class AlibabaRulesChecker:
                               "不要使用一个常量类维护所有常量，应按功能进行归类分开维护",
                               Severity.INFO, line=l, column=c)
 
+        # Magic values: hardcoded numbers (except 0,1,-1,2,3,100,1000,etc)
+        COMMON_MAGIC = set(range(-1, 13)) | {60, 100, 200, 256, 365, 400, 500, 1000, 1024, 2048, 4096, 3600, 86400}
+        for i, line in enumerate(lines, 1):
+            for m in re.finditer(r"[^.\w](\d{3,})[^.\w]", line):
+                val = int(m.group(1))
+                if val not in COMMON_MAGIC and val % 1000 not in (0, 500):
+                    if re.search(r"(if|else|return|throw|new)", line) and \
+                       not re.search(r"//.*magic|//.*constant", line, re.IGNORECASE) and \
+                       not re.search(r"@|\.\w+\s*=\s*\d", line):
+                        self._add(file_path, "ALIBABA_MAGIC_NUMBER",
+                                  f"魔法值 {val} 应定义为类或接口常量，避免直接使用",
+                                  Severity.INFO, line=i)
+                        break
+
+        # Constants should be defined with final
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration):
+                mods = node.modifiers or []
+                if "static" in mods and "final" not in mods and "public" in mods:
+                    for decl in node.declarators:
+                        if decl.name.isupper() and "_" in decl.name:
+                            l, c = self._pos(decl)
+                            self._add(file_path, "ALIBABA_CONST_FINAL",
+                                      f"常量 '{decl.name}' 应为 static final",
+                                      Severity.WARNING, line=l, column=c)
+
     # ==================== (三) 代码格式 ====================
     def check_code_style(self, tree, file_path: str, content: str):
         lines = content.split('\n')
@@ -834,6 +860,24 @@ class AlibabaRulesChecker:
                                   "当一个类有多个构造方法时，这些构造方法应该按顺序放置在一起",
                                   Severity.INFO, line=l, column=c)
 
+        # 4.22 Avoid BigDecimal(double)
+        for i, line in enumerate(lines, 1):
+            if re.search(r"new\s+BigDecimal\s*\(\s*\d+\.\d+\s*\)", line) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_BIGDECIMAL_DOUBLE",
+                          "禁止使用构造方法 BigDecimal(double) 的方式把 double 值转化为 BigDecimal 对象",
+                          Severity.WARNING, line=i)
+
+        # 4.23 Use equals for wrapper type comparison
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\b(Integer|Long|Short|Byte|Double|Float|Boolean)\b.*[=!]=\s*\d+", line) and \
+               not re.search(r"//|==\s*null|null\s*==", line):
+                m = re.search(r"(\w+)\s*[=!]=\s*(-?\d+)", line)
+                if m:
+                    self._add(file_path, "ALIBABA_WRAPPER_EQUALS",
+                              "包装类对象之间值的比较应使用 equals 方法而非 '=='",
+                              Severity.WARNING, line=i, column=line.find(m.group(2)))
+
         # 4.24 final keyword recommendation
         for i, line in enumerate(lines, 1):
             if re.search(r"\b(String|Integer|Long|Boolean)\s+(\w+)\s*=", line) and \
@@ -959,6 +1003,43 @@ class AlibabaRulesChecker:
                               f"类 '{node.name}' 包含大量静态方法，构造方法应设为 private",
                               Severity.INFO, line=l, column=c)
 
+        # 4.14 StringBuilder in loops
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                body_str = str(getattr(node, "body", "") or "")
+                loops = re.findall(r"(for|while)\s*\(", body_str)
+                if loops and "+=" in body_str and re.search(r"\w+\s*\+=?\s*\w+\s*\+", body_str):
+                    for i, line in enumerate(lines, 1):
+                        if re.search(r"\+\s*=?\s*\w+\s*\+", line) and \
+                           re.search(r"(for|while)\(", lines[max(0, i - 3)]) and \
+                           not re.search(r"StringBuilder|StringBuffer|String\.format|MessageFormat", line):
+                            self._add(file_path, "ALIBABA_STRING_CONCAT_LOOP",
+                                      "循环体内字符串连接使用 StringBuilder 的 append 方法进行扩展",
+                                      Severity.WARNING, line=i)
+                            break
+
+        # 4.17 toString in catch block
+        for path, node in tree:
+            if isinstance(node, javalang.tree.CatchClause):
+                body_str = str(node.body or "")
+                if ".toString()" in body_str and "printStackTrace" not in body_str:
+                    l = node.position.line if node.position else 0
+                    self._add(file_path, "ALIBABA_TOSTRING_CATCH",
+                              "异常捕获后直接使用 toString 输出堆栈信息应当使用 printStackTrace 或日志框架",
+                              Severity.INFO, line=l)
+
+        # 4.19 Use className.isInstance instead of instanceof in large conditionals
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\binstanceof\b", line):
+                count = 0
+                for j in range(max(0, i - 3), i + 1):
+                    if j < len(lines):
+                        count += lines[j].count("instanceof")
+                if count >= 3:
+                    self._add(file_path, "ALIBABA_MULTIPLE_INSTANCEOF",
+                              "多个 instanceof 判断建议使用多态或设计模式重构",
+                              Severity.INFO, line=i)
+
     # ==================== (五) 日期时间 ====================
     def check_date(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_date"):
@@ -1021,6 +1102,47 @@ class AlibabaRulesChecker:
                     self._add(file_path, "ALIBABA_MONTH_ENUM",
                               "建议使用枚举值来指代月份，而非使用数字字面量",
                               Severity.INFO, line=i)
+
+        # 1.8 Use JDK8 time API instead of java.util.Date/Calendar
+        for path, node in tree:
+            if isinstance(node, javalang.tree.Import):
+                ip = node.path or ""
+                if ip in ("java.util.Date", "java.util.Calendar", "java.text.SimpleDateFormat"):
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_USE_LOCALDATETIME",
+                              f"避免使用 {ip}，推荐使用 JDK8 新时间 API（LocalDate/LocalTime/LocalDateTime/Instant）",
+                              Severity.INFO, line=l, column=c)
+
+        # 1.9 Time should always carry time zone
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@JsonFormat", line) and \
+               not re.search(r"timezone|TimeZone|GMT|UTC|Asia/Shanghai", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_TIME_ZONE",
+                          "序列化日期时建议指定 timezone 参数",
+                          Severity.INFO, line=i)
+
+        # 1.12 Do not use int for timestamp
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration):
+                ft = getattr(node, "type", None)
+                if ft and hasattr(ft, "name") and ft.name == "int" and not ft.name == "long":
+                    for decl in node.declarators:
+                        fn = decl.name.lower()
+                        if any(kw in fn for kw in ("timestamp", "create_time", "update_time", "createTime", "updateTime", "expire_time")):
+                            l, c = self._pos(decl)
+                            self._add(file_path, "ALIBABA_TIMESTAMP_INT",
+                                      f"时间戳字段 '{decl.name}' 使用 long 而非 int",
+                                      Severity.WARNING, line=l, column=c)
+
+        # 1.5 Do not use Calendar.get() with magic numbers
+        for i, line in enumerate(lines, 1):
+            if re.search(r"Calendar\.get\(", line) and \
+               re.search(r"\b(0|7|8|9|10|11|12)\b", line) and \
+               not re.search(r"Calendar\.(YEAR|MONTH|DATE|HOUR|MINUTE|SECOND|MILLISECOND)", line):
+                self._add(file_path, "ALIBABA_CALENDAR_MAGIC",
+                          "Calendar 获取值请使用常量如 Calendar.DAY_OF_MONTH 而非数字",
+                          Severity.INFO, line=i)
 
     # ==================== (六) 集合处理 ====================
     def check_collection(self, tree, file_path: str, content: str):
@@ -1459,6 +1581,31 @@ class AlibabaRulesChecker:
                           "避免 Random 实例被多线程使用，推荐使用 ThreadLocalRandom",
                           Severity.INFO, line=i)
 
+        # Thread pool should not use Executors
+        for i, line in enumerate(lines, 1):
+            if re.search(r"Executors\.new\w+Pool\s*\(", line) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_CUSTOM_THREAD_POOL",
+                          "线程池不允许使用 Executors 去创建，而是通过 ThreadPoolExecutor 的方式",
+                          Severity.WARNING, line=i)
+
+        # Thread naming not specified
+        for i, line in enumerate(lines, 1):
+            if re.search(r"new\s+Thread\s*\(", line) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_NAMED_THREAD",
+                          "创建线程或线程池时请指定有意义的线程名称，方便出错时回溯",
+                          Severity.INFO, line=i)
+
+        # ThreadPoolExecutor: check if named
+        for i, line in enumerate(lines, 1):
+            if re.search(r"new\s+ThreadPoolExecutor\s*\(", line) and \
+               not re.search(r"ThreadFactory|threadFactory", line) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_THREAD_FACTORY",
+                          "创建线程池必须指定 ThreadFactory 以命名线程",
+                          Severity.INFO, line=i)
+
         # 7.16 Double-checked locking without volatile
         for path, node in tree:
             if isinstance(node, javalang.tree.SynchronizedStatement):
@@ -1635,14 +1782,56 @@ class AlibabaRulesChecker:
                               "方法内部单行注释应放在被注释语句上方另起一行，而非代码行尾",
                               Severity.INFO, line=i)
 
-        # 9.8 Delete unused fields/methods
+        # 9.3 Class must have @author and @date in Javadoc
         for path, node in tree:
             if isinstance(node, javalang.tree.ClassDeclaration):
-                for field in (node.body or []):
-                    if isinstance(field, javalang.tree.FieldDeclaration):
-                        for decl in field.declarators:
-                            if hasattr(decl, "initializer") and decl.initializer is None:
-                                pass
+                cl = node.position.line if node.position else 0
+                has_author = False
+                has_date = False
+                for jj in range(max(0, cl - 10), cl):
+                    if jj < len(lines):
+                        if re.search(r"@author", lines[jj]):
+                            has_author = True
+                        if re.search(r"@date|@since|@create", lines[jj]):
+                            has_date = True
+                if cl > 0:
+                    if not has_author:
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_JAVADOC_AUTHOR",
+                                  f"类 '{node.name}' 缺少 @author 创建者标记",
+                                  Severity.INFO, line=l, column=c)
+                    if not has_date:
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_JAVADOC_DATE",
+                                  f"类 '{node.name}' 缺少创建日期标记 (@date/@since)",
+                                  Severity.INFO, line=l, column=c)
+
+        # 9.8 Delete unused private fields/methods/parameters
+        all_method_names = set()
+        all_field_names = set()
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                all_method_names.add(node.name)
+                for param in (node.parameters or []):
+                    if hasattr(param, "name"):
+                        all_field_names.add(param.name)
+            elif isinstance(node, javalang.tree.FieldDeclaration):
+                for decl in node.declarators:
+                    all_field_names.add(decl.name)
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.FieldDeclaration):
+                        mods = member.modifiers or []
+                        if "private" in mods and "static" not in mods:
+                            for decl in member.declarators:
+                                fn = decl.name
+                                if fn not in all_method_names and fn not in all_field_names and \
+                                   not fn.startswith("serialVersionUID"):
+                                    l, c = self._pos(decl)
+                                    self._add(file_path, "ALIBABA_UNUSED_PRIVATE_FIELD",
+                                              f"私有字段 '{fn}' 未被使用，应移除",
+                                              Severity.WARNING, line=l, column=c)
 
     # ==================== (二) 异常处理 ====================
     def check_exception(self, tree, file_path: str, content: str):
@@ -1738,6 +1927,36 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_CATCH_GENERIC",
                           "catch 时应尽可能区分异常类型，避免使用 Exception/Throwable 捕获所有异常",
                           Severity.INFO, line=i)
+
+        # Transaction rollback check in catch
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                if "Transactional" in ann_names:
+                    for stmt in (node.body if isinstance(node.body, list) else []):
+                        if isinstance(stmt, javalang.tree.TryStatement):
+                            for catch in (stmt.catches or []):
+                                block_str = str(catch.body or "")
+                                if "TransactionAspectSupport" not in block_str and \
+                                   "rollback" not in block_str.lower() and \
+                                   "setRollbackOnly" not in block_str:
+                                    l = catch.parameter.position.line if catch.parameter and catch.parameter.position else 0
+                                    self._add(file_path, "ALIBABA_TRANSACTION_ROLLBACK",
+                                              "事务场景中捕获异常后需要回滚事务，注意手动回滚或重新抛出",
+                                              Severity.WARNING, line=l)
+
+        # Open API should use error codes (not just exception)
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                if any(a in ann_names for a in ("RequestMapping", "GetMapping", "PostMapping", "PutMapping", "DeleteMapping")):
+                    body_str = str(getattr(node, "body", "") or "")
+                    if re.search(r"throw new (RuntimeException|Exception)\(", body_str) and \
+                       not re.search(r"Result|Response|ErrorCode|errorCode|error_code|ApiResult|ApiResponse", body_str):
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_OPEN_API_ERRORCODE",
+                                  "开放接口必须使用错误码，不推荐内部异常直接抛出",
+                                  Severity.INFO, line=l, column=c)
 
         # 8. Exceptions not for flow control
         for i, line in enumerate(lines, 1):
@@ -2053,6 +2272,83 @@ class AlibabaRulesChecker:
                               "前后端的时间格式统一为 yyyy-MM-dd HH:mm:ss，统一为 GMT",
                               Severity.INFO, line=i)
 
+        # 10.11 File download content-disposition
+        for i, line in enumerate(lines, 1):
+            if re.search(r"Content-Disposition.*attachment", line) and \
+               not re.search(r"PercentEncoder|URLEncoder|encodeURIComponent|filename\*", line):
+                self._add(file_path, "ALIBABA_FILE_DOWNLOAD_HEADER",
+                          "文件下载时 Content-Disposition 应使用百分号编码后的 UTF-8 文件名",
+                          Severity.WARNING, line=i)
+
+        # 10.12 Duplicate submit prevention
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@PostMapping|@RequestMapping.*POST", line):
+                has_token = False
+                for j in range(max(0, i - 5), i + 5):
+                    if j < len(lines) and re.search(r"(token|noRepeat|repeatSubmit|rateLimit|limit|idempotent)", lines[j], re.IGNORECASE):
+                        has_token = True
+                        break
+                if not has_token:
+                    pass  # skip - too noisy
+
+        # 10.15 Avoid big transaction
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                if "Transactional" in ann_names:
+                    body_str = str(getattr(node, "body", "") or "")
+                    if re.search(r"(rpc|dubbo|feign|restTemplate|http|remote|sleep|Thread\.sleep|message|mq|kafka|rabbit)", body_str, re.IGNORECASE):
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_TRANSACTION_RPC",
+                                  "事务中避免使用 RPC 远程调用、消息发送或线程 sleep",
+                                  Severity.WARNING, line=l, column=c)
+
+        # 10.16 Avoid circular reference in JSON
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@OneToMany|@ManyToMany", line) and \
+               not re.search(r"@JsonIgnore|@JsonBackReference|@JsonManagedReference|@JsonIgnoreProperties", line):
+                self._add(file_path, "ALIBABA_CIRCULAR_REF",
+                          "双向关联关系需要配合 @JsonIgnore 等 JSON 序列化注解，防止循环引用",
+                          Severity.INFO, line=i)
+
+        # 10.5 API comments required
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                if any(a in ann_names for a in ("RequestMapping", "GetMapping", "PostMapping", "PutMapping", "DeleteMapping")):
+                    start_line = node.position.line if node.position else 1
+                    doc_comment_found = False
+                    for j in range(max(0, start_line - 10), start_line - 1):
+                        if j < len(lines) and re.search(r"/\*\*", lines[j]):
+                            doc_comment_found = True
+                            break
+                    if not doc_comment_found:
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_API_COMMENT",
+                                  f"API 方法 '{node.name}' 必须添加注释说明接口功能",
+                                  Severity.INFO, line=l, column=c)
+
+        # 10.16 View template: no complex logic
+        if file_path.endswith((".jsp", ".ftl", ".vm", ".html")):
+            for i, line in enumerate(lines, 1):
+                if re.search(r"(if\s*\(|for\s*\(|while\s*\()", line) and \
+                   re.search(r"(\w+\.\w+|\w+\(|\w+\))", line):
+                    nested = line.count("(") > 2
+                    if nested:
+                        self._add(file_path, "ALIBABA_VIEW_COMPLEX",
+                                  "不要在视图模板中加入任何复杂的逻辑运算",
+                                  Severity.WARNING, line=i)
+
+        # 10.17 Velocity use $!{} not ${}
+        if file_path.endswith(".vm"):
+            for i, line in enumerate(lines, 1):
+                if re.search(r"\$\{", line) and \
+                   not re.search(r"\$\!", line) and \
+                   not re.search(r"//|\*", line):
+                    self._add(file_path, "ALIBABA_VELOCITY_NULL",
+                              "velocity 页面输出变量必须加 $!{var} 以避免空指针",
+                              Severity.WARNING, line=i)
+
     # ==================== 四、安全规约 ====================
     def check_security(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_security"):
@@ -2151,6 +2447,59 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_FILE_UPLOAD",
                           "对于文件上传功能，需要对文件大小、类型进行严格检查和控制",
                           Severity.WARNING, line=i)
+
+        # 4.11 User input validation required
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@RequestParam|@PathVariable|@RequestBody", line) and \
+               not re.search(r"@Valid|@Validated|javax\.validation|jakarta\.validation", line) and \
+               not re.search(r"//", line):
+                for j, line2 in enumerate(lines[max(0, i - 15):i + 15], max(0, i - 14)):
+                    if re.search(r"@Valid|@Validated", line2):
+                        break
+                else:
+                    pass  # too noisy for @Valid on every param
+
+        # 4.12 No SQL injection in MyBatis ${
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\$\{", line) and \
+               re.search(r"(select|from|where|order by|group by|having|insert|update|delete)", line, re.IGNORECASE) and \
+               not re.search(r"//.*no_sqli|//.*sql_injection", line, re.IGNORECASE):
+                if re.search(r"\$\{.*(user|input|query|param|keyword|name|value|text|search)", line, re.IGNORECASE) or \
+                   re.search(r"order\s+by\s+\$\{", line, re.IGNORECASE):
+                    self._add(file_path, "ALIBABA_SQL_INJECTION",
+                              "MyBatis 中使用 ${} 拼接的 SQL 存在注入风险，建议使用 #{} 参数化查询",
+                              Severity.ERROR, line=i)
+
+        # 4.13 User ID in session, not from request
+        for i, line in enumerate(lines, 1):
+            if re.search(r"request\.getParameter.*userId|request\.getParameter.*user_id|request\.getParameter.*accountId", line, re.IGNORECASE):
+                self._add(file_path, "ALIBABA_USERID_FROM_REQUEST",
+                          "用户 ID 应从 session 中获取，禁止从请求参数中获取以防止越权",
+                          Severity.WARNING, line=i)
+
+        # 4.14 Logging sensitive data
+        for i, line in enumerate(lines, 1):
+            if re.search(r"(log(ger)?\.(info|debug|warn|error)|System\.out|System\.err)", line) and \
+               re.search(r"(password|pwd|secret|token|credential|authCode|smsCode|verifyCode)", line, re.IGNORECASE) and \
+               not re.search(r"//.*(脱敏|mask|hide|\*)", line, re.IGNORECASE):
+                self._add(file_path, "ALIBABA_LOG_SENSITIVE",
+                          "日志输出时禁止出现密码、密钥等敏感信息",
+                          Severity.WARNING, line=i)
+
+        # 4.15 Content security: anti-spam, anti-fraud, content filtering
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration) and \
+               "public" in (node.modifiers or []):
+                mn = node.name.lower()
+                if any(kw in mn for kw in ("publish", "post", "reply", "comment", "send", "message", "review")):
+                    ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                    if any(a in ann_names for a in ("RequestMapping", "GetMapping", "PostMapping", "PutMapping", "DeleteMapping")):
+                        body_str = str(getattr(node, "body", "") or "")
+                        if not re.search(r"(rateLimiter|rate_limit|rateLimit|limit|throttle|防刷|antiSpam|spam|contentCheck|checkContent|sensitive|filter|validate)", body_str, re.IGNORECASE):
+                            l, c = self._pos(node)
+                            self._add(file_path, "ALIBABA_CONTENT_SECURITY",
+                                      "用户发布/评论/发送等场景必须实现防刷、内容违禁词过滤等安全措施",
+                                      Severity.INFO, line=l, column=c)
 
     # ==================== 五、MySQL 数据库 ====================
     def check_sql(self, tree, file_path: str, content: str):
@@ -2301,6 +2650,28 @@ class AlibabaRulesChecker:
                               "in 操作集合元素数量控制在 1000 个之内",
                               Severity.WARNING, line=i)
 
+        # 5.3.x count == 0 return directly
+        for i, line in enumerate(lines, 1):
+            if re.search(r"count\s*\(\s*\*\s*\)", line, re.IGNORECASE) and \
+               not re.search(r"if|if\s*.*count|count.*>.*0|count.*==.*0", lines[max(0, i - 5):i + 3]) and \
+               not re.search(r"//", line):
+                for j in range(min(i, len(lines)), min(i + 5, len(lines))):
+                    if re.search(r"if\s*.*count", lines[j - 1], re.IGNORECASE):
+                        break
+                else:
+                    pass  # too noisy to warn
+
+        # 5.3.x Implicit conversion detection
+        for i, line in enumerate(lines, 1):
+            if re.search(r"WHERE\s+.*=.*\"\d+", line, re.IGNORECASE) or \
+               re.search(r"WHERE\s+.*\"\d+\".*=", line, re.IGNORECASE) or \
+               re.search(r"WHERE\s+.*\w+\s*=\s*\w+", line, re.IGNORECASE):
+                m = re.search(r"(\w+)\.(\w+)\s*=\s*(\w+)\.(\w+)", line, re.IGNORECASE)
+                if m and m.group(2) != m.group(4):
+                    self._add(file_path, "ALIBABA_IMPLICIT_CONVERSION",
+                              "防止因字段类型不同造成的隐式转换，导致索引失效",
+                              Severity.WARNING, line=i)
+
         # 5.3.13 TRUNCATE not recommended
         for i, line in enumerate(lines, 1):
             if re.search(r"\bTRUNCATE\s+TABLE", line, re.IGNORECASE) and \
@@ -2308,6 +2679,25 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_TRUNCATE_USAGE",
                           "TRUNCATE TABLE 无事务且不触发 trigger，不建议在开发代码中使用此语句",
                           Severity.WARNING, line=i)
+
+        # 5.3.12 Pagination must have ORDER BY
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\bLIMIT\s+\d+", line, re.IGNORECASE) and \
+               not re.search(r"ORDER\s+BY", line, re.IGNORECASE) and \
+               not re.search(r"//", line) and \
+               re.search(r"SELECT", line, re.IGNORECASE):
+                self._add(file_path, "ALIBABA_PAGE_ORDER_BY",
+                          "分页查询必须指定 ORDER BY 以保证结果稳定",
+                          Severity.WARNING, line=i)
+
+        # 5.4.1 Try to avoid count on large tables without index
+        for i, line in enumerate(lines, 1):
+            if re.search(r"select\s+count\s*\(.*\)\s+from", line, re.IGNORECASE) and \
+               not re.search(r"where|WHERE", line) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_COUNT_NO_WHERE",
+                          "COUNT 全表扫描且无 WHERE 条件可能性能低下，需确认是否添加索引",
+                          Severity.INFO, line=i)
 
         # 5.4.2 POJO boolean mapping in resultMap
         for i, line in enumerate(lines, 1):
@@ -2358,6 +2748,160 @@ class AlibabaRulesChecker:
                           "更新数据表记录时，必须同时更新记录对应的 update_time 字段值为当前时间",
                           Severity.INFO, line=i)
 
+        # 5.1.3 Table name: no plural nouns
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               any(node.name.endswith(s) for s in ("DO", "PO", "Entity")):
+                cn = node.name
+                for suffix in ("sDO", "sPO", "sEntity", "ListDO", "ListPO", "SetDO"):
+                    if cn.endswith(suffix):
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_TABLE_PLURAL",
+                                  f"表名（类 '{cn}'）不使用复数名词",
+                                  Severity.WARNING, line=l, column=c)
+                        break
+
+        # 5.1.4 Reserved words
+        MYSQL_RESERVED_WORDS = [
+            "desc", "range", "match", "delayed", "order", "group", "select", "insert",
+            "update", "delete", "from", "where", "having", "between", "like", "and", "or",
+            "in", "not", "is", "null", "key", "index", "primary", "foreign", "default",
+            "check", "begin", "commit", "rollback", "savepoint", "grant", "revoke",
+            "call", "procedure", "function", "trigger", "cursor", "escape", "exists"
+        ]
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               any(node.name.endswith(s) for s in ("DO", "PO", "Entity")):
+                for field in (node.body or []):
+                    if isinstance(field, javalang.tree.FieldDeclaration):
+                        for decl in field.declarators:
+                            if decl.name.lower() in MYSQL_RESERVED_WORDS:
+                                l, c = self._pos(decl)
+                                self._add(file_path, "ALIBABA_RESERVED_WORD",
+                                          f"字段名 '{decl.name}' 是 MySQL 保留字，请避免使用",
+                                          Severity.WARNING, line=l, column=c)
+
+        # 5.1.6 Use decimal for money, not float/double
+        # 5.1.5 Index naming: pk_, uk_, idx_
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               any(node.name.endswith(s) for s in ("DO", "PO", "Entity")):
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.FieldDeclaration):
+                        ann_str = str([getattr(a, "name", "") for a in (member.annotations or [])])
+                        decl_str = str([d.name for d in member.declarators])
+                        for i, line in enumerate(lines, 1):
+                            if re.search(r"@Index|@TableIndex|uniqueIndex|index.*=", line) and \
+                               not re.search(r"idx_\w+|uk_\w+|pk_\w+", line) and \
+                               not re.search(r"//", line):
+                                self._add(file_path, "ALIBABA_INDEX_NAMING",
+                                          "主键索引用 pk_，唯一索引用 uk_，普通索引用 idx_ 前缀",
+                                          Severity.INFO, line=i)
+
+        # 5.1.6 Use decimal for money, not float/double
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration):
+                ft = getattr(node, "type", None)
+                if ft and hasattr(ft, "name") and ft.name in ("float", "double") and \
+                   "static" not in (node.modifiers or []) and "final" not in (node.modifiers or []):
+                    for decl in node.declarators:
+                        fn = decl.name.lower()
+                        if any(kw in fn for kw in ("price", "amount", "money", "salary", "cost", "fee", "payment", "total", "sum", "balance")):
+                            l, c = self._pos(decl)
+                            self._add(file_path, "ALIBABA_DECIMAL_TYPE",
+                                      "小数类型为 decimal，禁止使用 float 和 double 表示金额",
+                                      Severity.WARNING, line=l, column=c)
+
+        # 5.2.1 Unique index on logically unique fields
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               any(node.name.endswith(s) for s in ("DO", "PO", "Entity")):
+                fields = []
+                has_unique = False
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.FieldDeclaration):
+                        for ann in (member.annotations or []):
+                            if hasattr(ann, "name") and ann.name in ("Column", "Table", "TableField"):
+                                if "unique" in str(ann).lower() or "UniqueConstraint" in str(ann).lower():
+                                    has_unique = True
+                        for decl in member.declarators:
+                            fn = decl.name.lower()
+                            if fn in ("name", "email", "phone", "mobile", "order_no", "orderNo", "trade_no", "tradeNo",
+                                      "id_card", "idCard", "serial_no", "serialNo", "code", "username"):
+                                if not has_unique:
+                                    l, c = self._pos(decl)
+                                    self._add(file_path, "ALIBABA_UNIQUE_INDEX",
+                                              f"字段 '{decl.name}' 业务上具有唯一特性，必须建成唯一索引",
+                                              Severity.WARNING, line=l, column=c)
+                                    break
+                    if has_unique:
+                        break
+
+        # 5.2.4 No left-fuzzy LIKE
+        for i, line in enumerate(lines, 1):
+            if re.search(r"LIKE\s+['\"]%\w+%['\"]", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_LEFT_FUZZY",
+                          "页面搜索严禁左模糊或者全模糊，需要请走搜索引擎来解决",
+                          Severity.WARNING, line=i)
+
+        # 5.3.6 No foreign keys
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@JoinColumn.*foreignKey|@OnDelete|foreignKey\s*=|@ForeignKey", line) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_NO_FOREIGN_KEY",
+                          "不得使用外键与级联，一切外键概念必须在应用层解决",
+                          Severity.WARNING, line=i)
+
+        # 5.3.7 No more than 3 table join
+        for i, line in enumerate(lines, 1):
+            if re.search(r"JOIN\s+\w+.*JOIN\s+\w+.*JOIN\s+\w+.*JOIN\s+\w+", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_JOIN_LIMIT",
+                          "超过三个表禁止 join，需要 join 的字段数据类型必须保持一致",
+                          Severity.WARNING, line=i)
+
+        # 5.3.8 SELECT before DELETE/UPDATE
+        for i, line in enumerate(lines, 1):
+            if re.search(r"\b(DELETE|UPDATE)\b.*\b(WHERE|SET)\b", line, re.IGNORECASE) and \
+               not re.search(r"//", line) and \
+               not re.search(r"@.*Annotation|\.delete\(", line):
+                has_preceding_select = False
+                for j in range(max(0, i - 10), i):
+                    if j < len(lines) and re.search(r"SELECT\b.*\bFROM\b", lines[j], re.IGNORECASE) and \
+                       re.search(re.escape(line.strip()[:20]), lines[j]):
+                        has_preceding_select = True
+                        break
+                if not has_preceding_select:
+                    self._add(file_path, "ALIBABA_SELECT_BEFORE_DML",
+                              "数据订正（删除/修改记录操作）时，先 SELECT 确认无误再执行",
+                              Severity.INFO, line=i)
+
+        # 5.4.8 No big update-all-fields
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                body_stmts = node.body if isinstance(node.body, list) else getattr(getattr(node, "body", None), "statements", []) or []
+                if node.name.startswith("update") and len(body_stmts) == 1:
+                    for stmt in body_stmts:
+                        stmt_str = str(stmt)
+                        if "set" in stmt_str.lower() and stmt_str.count(",") > 3:
+                            l, c = self._pos(node)
+                            self._add(file_path, "ALIBABA_UPDATE_ALL_FIELDS",
+                                      "不要写大而全的数据更新接口，只更新目标字段而非所有字段",
+                                      Severity.INFO, line=l, column=c)
+
+        # 5.4.9 @Transactional not on read-only methods
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                if "Transactional" in ann_names:
+                    mn = node.name.lower()
+                    if mn.startswith(("get", "find", "query", "select", "list", "count", "search", "read")):
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_TRANSACTIONAL_READONLY",
+                                  "@Transactional 不要滥用，只读方法不需要事务，考虑回滚方案",
+                                  Severity.INFO, line=l, column=c)
+
     # ==================== 三、单元测试 ====================
     def check_unit_test(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_unit_test"):
@@ -2382,6 +2926,56 @@ class AlibabaRulesChecker:
                         self._add(file_path, "ALIBABA_TEST_ENV_DEP",
                                   "单元测试应该不依赖外界环境（如文件系统、网络），以保证可重复执行",
                                   Severity.WARNING, line=j)
+                        break
+
+        # 3.2 Tests must use assert, not System.out
+        in_test = False
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@Test", line):
+                in_test = True
+                has_assert = False
+                for j in range(i, min(i + 50, len(lines) + 1)):
+                    if j <= len(lines):
+                        if re.search(r"assert(True|False|Equals|Null|NotNull|Same|That|ArrayEquals)|fail\s*\(", lines[j - 1]):
+                            has_assert = True
+                            break
+                        if re.search(r"^\s*\}\s*$", lines[j - 1]):
+                            break
+                if not has_assert and "src/test/java" in file_path:
+                    l = i
+                    self._add(file_path, "ALIBABA_TEST_NO_ASSERT",
+                              "单元测试必须使用 assert 验证结果，而非 System.out 人肉验证",
+                              Severity.WARNING, line=l)
+                in_test = False
+
+        # 3.10 Tests should not hardcode DB IDs
+        if "src/test/java" in file_path:
+            for i, line in enumerate(lines, 1):
+                if re.search(r"\.(get|find|query|select)\w*\s*\(\s*\d{5,}\s*\)", line) and \
+                   not re.search(r"//", line):
+                    self._add(file_path, "ALIBABA_TEST_HARDCODED_ID",
+                              "单元测试不能假设数据库数据存在，请使用程序插入数据而非硬编码 ID",
+                              Severity.WARNING, line=i)
+
+        # 3.11 Tests should have @Rollback for DB
+        has_rollback = False
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                for ann in (node.annotations or []):
+                    if hasattr(ann, "name") and ann.name in ("Rollback", "Transactional"):
+                        if ann.name == "Rollback":
+                            has_rollback = True
+                        break
+        if not has_rollback and "@Test" in content and "src/test/java" in file_path:
+            for path, node in tree:
+                if isinstance(node, javalang.tree.ClassDeclaration):
+                    if node.name.endswith("Test"):
+                        annotations = [getattr(a, "name", "") for a in (node.annotations or [])]
+                        if "Transactional" in annotations and "Rollback" not in annotations:
+                            l, c = self._pos(node)
+                            self._add(file_path, "ALIBABA_TEST_ROLLBACK",
+                                      "数据库相关的单元测试应设定自动回滚机制，建议添加 @Rollback 注解",
+                                      Severity.INFO, line=l, column=c)
                         break
 
     # ==================== 六、工程结构 ====================
@@ -2430,6 +3024,108 @@ class AlibabaRulesChecker:
                               f"展示对象 '{cn}' 应放在 vo 或 view 包中",
                               Severity.INFO, line=l, column=c)
 
+        # 6.2.1 Remote call timeout
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.MethodDeclaration):
+                        body_stmts = member.body if isinstance(member.body, list) else getattr(getattr(member, "body", None), "statements", []) or []
+                        for stmt in body_stmts:
+                            stmt_str = str(stmt)
+                            if re.search(r"(rpc|dubbo|feign|restTemplate|webClient|httpClient|invoke)\w*\.\s*(invoke|execute|call|send|get|post|put|delete)\s*\(", stmt_str, re.IGNORECASE):
+                                found_timeout = False
+                                for line in lines[max(0, content.index(stmt_str[:30]) - 30):content.index(stmt_str[:30])]:
+                                    if re.search(r"timeout", line, re.IGNORECASE):
+                                        found_timeout = True
+                                        break
+                                if not found_timeout:
+                                    l, c = self._pos(member)
+                                    self._add(file_path, "ALIBABA_REMOTE_TIMEOUT",
+                                              f"远程调用方法 '{member.name}' 必须设置超时时间",
+                                              Severity.WARNING, line=l, column=c)
+                                break
+
+        # 6.4.1 Error code format
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                cn = node.name
+                if "ErrorCode" in cn or "ResultCode" in cn or "ResponseCode" in cn or cn.endswith("Code"):
+                    for member in (node.body or []):
+                        if isinstance(member, javalang.tree.FieldDeclaration):
+                            for decl in member.declarators:
+                                val = getattr(decl, "initializer", None)
+                                if val is not None:
+                                    val_str = str(val)
+                                    if len(val_str) < 4 or len(val_str) > 8:
+                                        l, c = self._pos(decl)
+                                        self._add(file_path, "ALIBABA_ERROR_CODE_LEN",
+                                                  f"错误码 '{decl.name}' 长度应统一为 5 或 6 位",
+                                                  Severity.INFO, line=l, column=c)
+                                    if val_str.isdigit() and not re.search(r"(PARAM|BIZ|SYS|DB)", decl.name):
+                                        l, c = self._pos(decl)
+                                        self._add(file_path, "ALIBABA_ERROR_CODE_CLASS",
+                                                  f"错误码 '{decl.name}={val_str}' 需要按参数/业务/系统/DB 分类编号",
+                                                  Severity.INFO, line=l, column=c)
+
+        # 6.5.2 No interface using Map for params/result
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                cn = node.name
+                if cn.endswith(("Service", "Controller", "Manager", "Component")):
+                    for member in (node.body or []):
+                        if isinstance(member, javalang.tree.MethodDeclaration):
+                            rt = getattr(member, "return_type", None)
+                            if rt and hasattr(rt, "name") and rt.name in ("Map", "HashMap", "LinkedHashMap"):
+                                l, c = self._pos(member)
+                                self._add(file_path, "ALIBABA_INTERFACE_MAP_RESULT",
+                                          f"接口方法 '{member.name}' 不能返回 Map，应使用 DTO",
+                                          Severity.WARNING, line=l, column=c)
+                            for param in (member.parameters or []):
+                                pt = param.type
+                                if pt and hasattr(pt, "name") and pt.name in ("Map", "HashMap"):
+                                    l, c = self._pos(member)
+                                    self._add(file_path, "ALIBABA_INTERFACE_MAP_PARAM",
+                                              f"接口方法 '{member.name}' 不能接受 Map 参数，应使用 DTO",
+                                              Severity.WARNING, line=l, column=c)
+
+        # 6.5.4 No method longer than 80 lines
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                body = getattr(node, "body", None)
+                if isinstance(body, list) and len(body) > 80:
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_METHOD_TOO_LONG",
+                              f"方法 '{node.name}' 超过 80 行，应进行拆分",
+                              Severity.WARNING, line=l, column=c)
+
+        # 6.6.1 POJO must override toString
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                cn = node.name
+                if cn.endswith(("DO", "DTO", "VO", "BO", "PO", "Entity", "Model")):
+                    has_to_string = False
+                    for member in (node.body or []):
+                        if isinstance(member, javalang.tree.MethodDeclaration) and member.name == "toString":
+                            has_to_string = True
+                            break
+                    if not has_to_string:
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_POJO_TOSTRING",
+                                  f"POJO 类 '{cn}' 应重写 toString 方法",
+                                  Severity.INFO, line=l, column=c)
+
+        # 6.7.4 @Service/@Component should use Spring annotation
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                cn = node.name
+                if cn.endswith(("ServiceImpl", "ManagerImpl")):
+                    ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                    if not any(a in ann_names for a in ("Service", "Component", "Repository", "RestController", "Controller")):
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_SPRING_ANNOTATION",
+                                  f"类 '{cn}' 需要添加 Spring Bean 注解",
+                                  Severity.INFO, line=l, column=c)
+
     # ==================== 七、设计规约 ====================
     def check_design(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_design"):
@@ -2461,6 +3157,76 @@ class AlibabaRulesChecker:
                     self._add(file_path, "ALIBABA_COMPOSITION",
                               f"类 '{m.group(1)}' 谨慎使用继承方式扩展，优先使用聚合/组合方式",
                               Severity.INFO, line=i)
+
+        # 7.5 Interface should define contract
+        for i, line in enumerate(lines, 1):
+            m = re.search(r"interface\s+(\w+)", line)
+            if m:
+                iface_name = m.group(1)
+                has_impl = False
+                for j, line2 in enumerate(lines, 1):
+                    if re.search(rf"\bimplements\s+\w*{re.escape(iface_name)}\w*", line2):
+                        has_impl = True
+                        break
+                if not has_impl and not iface_name.startswith("Base"):
+                    self._add(file_path, "ALIBABA_INTERFACE_EMPTY",
+                              f"接口 '{iface_name}' 需要被实现才能存在",
+                              Severity.INFO, line=i)
+
+        # 7.6 Avoid deep inheritance (depth > 3)
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                if node.extends:
+                    parent = node.extends.name
+                    depth = 1
+                    cur = parent
+                    while depth < 10:
+                        found_parent = False
+                        for path2, node2 in tree:
+                            if isinstance(node2, javalang.tree.ClassDeclaration) and node2.name == cur:
+                                if node2.extends:
+                                    cur = node2.extends.name
+                                    depth += 1
+                                    found_parent = True
+                                break
+                        if not found_parent:
+                            break
+                    if depth >= 3:
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_DEEP_INHERITANCE",
+                                  f"类 '{node.name}' 继承层次过深（{depth} 层），最大不超过 3 层",
+                                  Severity.INFO, line=l, column=c)
+
+        # 7.8 No class with multiple if-else + switch > 10
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                if_else_count = 0
+                switch_count = 0
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.MethodDeclaration):
+                        body_str = str(member.body or "")
+                        if_else_count += len(re.findall(r"\bif\s*\(", body_str))
+                        switch_count += len(re.findall(r"\bswitch\s*\(", body_str))
+                if if_else_count > 15:
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_EXCESSIVE_IFELSE",
+                              f"类 '{node.name}' 包含 {if_else_count} 个 if-else，建议用策略模式替代",
+                              Severity.WARNING, line=l, column=c)
+
+        # 7.9 Business logic decomposed rather than one big method
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                body = getattr(node, "body", None)
+                if isinstance(body, list) and len(body) > 50:
+                    line_count = 0
+                    for stmt in body:
+                        stmt_lines = str(stmt).split("\n")
+                        line_count += len(stmt_lines)
+                    if line_count > 100:
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_BIG_METHOD",
+                                  f"方法 '{node.name}' 过长，应分解为多个小方法",
+                                  Severity.WARNING, line=l, column=c)
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_naming(tree, file_path, content)
