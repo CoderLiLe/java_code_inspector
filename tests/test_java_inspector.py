@@ -2203,5 +2203,98 @@ class TestSonarQubeThirteen(unittest.TestCase):
         self.assertGreaterEqual(len(r), 1)
 
 
+class TestSonarQubeFourteen(unittest.TestCase):
+    def setUp(self):
+        self.config = InspectionConfig()
+        for cat in ['sonar_security_fourteen', 'sonar_serialization_fourteen', 'sonar_math_fourteen', 'sonar_convention_fourteen', 'sonar_error_prone_fourteen']:
+            self.config.config['rules'][cat] = {'enabled': True}
+        self.inspector = JavaCodeInspector(self.config)
+
+    def _check(self, code, rule_id):
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            return [i for i in issues if i.rule_id == rule_id]
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_volatile_collection(self):
+        code = 'class Foo { volatile java.util.List list; }'
+        r = self._check(code, 'SONAR_VOLATILE_COLLECTION')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_inner_serializable(self):
+        code = 'class Foo implements java.io.Serializable { class Inner {} }'
+        r = self._check(code, 'SONAR_INNER_SERIALIZABLE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_final_protected(self):
+        code = 'final class Foo { protected int x; }'
+        r = self._check(code, 'SONAR_FINAL_PROTECTED')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_bigdecimal_rounding(self):
+        code = 'import java.math.BigDecimal; class Foo { void bar() { new BigDecimal("1").divide(new BigDecimal("3")); } }'
+        r = self._check(code, 'SONAR_BIGDECIMAL_ROUNDING')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_float_compare_v2(self):
+        code = 'class Foo { boolean bar() { return 1.0 == 2.0; } }'
+        r = self._check(code, 'SONAR_FLOAT_COMPARE_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_exception_class_naming(self):
+        code = 'class MyError extends Exception {}'
+        r = self._check(code, 'SONAR_EXCEPTION_CLASS_NAMING')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_import_wildcard(self):
+        code = 'import java.util.*; class Foo {}'
+        r = self._check(code, 'SONAR_IMPORT_WILDCARD')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_test_class_naming(self):
+        code = 'import org.junit.jupiter.api.Test; @Test class MyTestClass {}'
+        r = self._check(code, 'SONAR_TEST_CLASS_NAMING')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_infinite_recursion(self):
+        code = 'class Foo { void bar() { bar(); bar(); } }'
+        r = self._check(code, 'SONAR_INFINITE_RECURSION')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_assign_in_cond_v2(self):
+        code = 'class Foo { void bar(int x) { if(x=1) {} } }'
+        r = self._check(code, 'SONAR_ASSIGN_IN_COND_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_underscore_literal(self):
+        code = 'class Foo { int x = 123456; }'
+        r = self._check(code, 'SONAR_UNDERSCORE_LITERAL')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_empty_marker_interface_v2(self):
+        code = 'interface Marker {}'
+        r = self._check(code, 'SONAR_EMPTY_MARKER_INTERFACE_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_comparable_without_compareto(self):
+        code = 'class Foo implements Comparable { public boolean equals(Object o) { return true; } }'
+        r = self._check(code, 'SONAR_COMPARABLE_WITHOUT_COMPARETO')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_swallow_rethrow(self):
+        code = 'class Foo { void bar() { try {} catch(Exception e) { throw new RuntimeException(); } } }'
+        r = self._check(code, 'SONAR_SWALLOW_RE_THROW')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_test_method_naming_v2(self):
+        code = 'import org.junit.jupiter.api.Test; class Foo { @Test void Bar() {} }'
+        r = self._check(code, 'SONAR_TEST_METHOD_NAMING_V2')
+        self.assertGreaterEqual(len(r), 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
