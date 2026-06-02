@@ -17,6 +17,9 @@ from java_inspector.sonarqube_rules_fourth import SonarQubeCheckerFourth
 from java_inspector.sonarqube_rules_five import SonarQubeCheckerFive
 from java_inspector.sonarqube_rules_six import SonarQubeCheckerSix
 from java_inspector.sonarqube_rules_seven import SonarQubeCheckerSeven
+from java_inspector.sonarqube_rules_eight import SonarQubeCheckerEight
+from java_inspector.sonarqube_rules_nine import SonarQubeCheckerNine
+from java_inspector.sonarqube_rules_ten import SonarQubeCheckerTen
 
 
 class JavaCodeInspector:
@@ -52,6 +55,9 @@ class JavaCodeInspector:
             SonarQubeCheckerFive(self.config, self.issues).run_all(tree, file_path, content)
             SonarQubeCheckerSix(self.config, self.issues).run_all(tree, file_path, content)
             SonarQubeCheckerSeven(self.config, self.issues).run_all(tree, file_path, content)
+            SonarQubeCheckerEight(self.config, self.issues).run_all(tree, file_path, content)
+            SonarQubeCheckerNine(self.config, self.issues).run_all(tree, file_path, content)
+            SonarQubeCheckerTen(self.config, self.issues).run_all(tree, file_path, content)
 
             self._calculate_metrics(tree, file_path, content)
 
