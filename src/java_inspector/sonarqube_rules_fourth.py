@@ -391,7 +391,7 @@ class SonarQubeCheckerFourth:
                 member = getattr(node, "member", "")
                 if member in ("filter", "map", "flatMap", "sorted", "peek", "distinct", "limit", "skip"):
                     parent = path[-2] if len(path) >= 2 else None
-                    if parent and isinstance(parent, javalang_tree.ExpressionStatement):
+                    if parent and isinstance(parent, javalang_tree.StatementExpression):
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_STREAM_INTERMEDIATE",
                                   "S3958: 流中间操作（" + member + "）没有终端操作，不会执行",

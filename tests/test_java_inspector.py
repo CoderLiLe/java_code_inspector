@@ -1338,5 +1338,334 @@ class TestSonarQubeFourth(unittest.TestCase):
         self.assertGreaterEqual(len(r), 1)
 
 
+class TestSonarQubeFive(unittest.TestCase):
+    def setUp(self):
+        self.config = InspectionConfig()
+        for cat in ['sonar_bugs_extra', 'sonar_convention_extra', 'sonar_maintainability']:
+            self.config.config['rules'][cat] = {'enabled': True}
+        self.inspector = JavaCodeInspector(self.config)
+
+    def _check(self, code, rule_id):
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            return [i for i in issues if i.rule_id == rule_id]
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_system_exit(self):
+        r = self._check('class Foo { void bar() { System.exit(1); } }', 'SONAR_SYSTEM_EXIT')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_npe_thrown(self):
+        r = self._check('class Foo { void bar() { throw new NullPointerException(); } }', 'SONAR_NPE_THROWN')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_public_field(self):
+        r = self._check('class Foo { public int x; }', 'SONAR_PUBLIC_FIELD')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_raw_type(self):
+        r = self._check('class Foo { java.util.List list; }', 'SONAR_RAW_TYPE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_pattern_loop(self):
+        code = 'class Foo { void bar() { for (int i=0;i<10;i++) { java.util.regex.Pattern.compile("x"); } } }'
+        r = self._check(code, 'SONAR_PATTERN_LOOP')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_override_missing(self):
+        r = self._check('class Foo { public String toString() { return ""; } }', 'SONAR_OVERRIDE_MISSING')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_constant_case(self):
+        code = 'class Foo { public static final int myConst = 1; }'
+        r = self._check(code, 'SONAR_CONSTANT_CASE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_complex_expression(self):
+        code = 'class Foo { boolean b(int x,int y,int z,int w) { return x>0&&y>0&&z>0&&w>0; } }'
+        r = self._check(code, 'SONAR_COMPLEX_EXPRESSION')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_loop_size(self):
+        r = self._check('class Foo { int bar(java.util.List l) { int s=0; for(int i=0;i<l.size();i++) s+=i; return s; } }', 'SONAR_LOOP_SIZE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_case_insensitive(self):
+        code = 'class Foo { boolean bar(String s) { return s.toLowerCase().equals("x"); } }'
+        r = self._check(code, 'SONAR_CASE_INSENSITIVE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_optional_param(self):
+        code = 'class Foo { void bar(java.util.Optional<String> o) {} }'
+        r = self._check(code, 'SONAR_OPTIONAL_PARAM')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_create_temp_file(self):
+        code = 'class Foo { void bar() throws Exception { java.io.File.createTempFile("x","y"); } }'
+        r = self._check(code, 'SONAR_CREATE_TEMP_FILE')
+        self.assertGreaterEqual(len(r), 1)
+
+
+class TestSonarQubeSix(unittest.TestCase):
+    def setUp(self):
+        self.config = InspectionConfig()
+        for cat in ['sonar_bugs_six', 'sonar_code_smell_six', 'sonar_security_six']:
+            self.config.config['rules'][cat] = {'enabled': True}
+        self.inspector = JavaCodeInspector(self.config)
+
+    def _check(self, code, rule_id):
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            return [i for i in issues if i.rule_id == rule_id]
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_print_stack_trace(self):
+        code = 'class Foo { void bar() { try { int x=1; } catch(Exception e) { e.printStackTrace(); } } }'
+        r = self._check(code, 'SONAR_PRINT_STACK_TRACE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_throw_in_finally(self):
+        code = 'class Foo { void bar() { try { int x=1; } finally { throw new RuntimeException(); } } }'
+        r = self._check(code, 'SONAR_THROW_IN_FINALLY')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_string_buffer(self):
+        r = self._check('class Foo { void bar() { new StringBuffer(); } }', 'SONAR_STRING_BUFFER')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_big_decimal_double(self):
+        r = self._check('class Foo { void bar() { new java.math.BigDecimal(1.5); } }', 'SONAR_BIG_DECIMAL_DOUBLE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_suppress_warning(self):
+        r = self._check('class Foo { @SuppressWarnings("all") void bar() {} }', 'SONAR_SUPPRESS_WARNING')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_instanceof_final(self):
+        r = self._check('class Foo { boolean bar(Object o) { return o instanceof String; } }', 'SONAR_INSTANCEOF_FINAL')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_empty_nested_block(self):
+        code = 'class Foo { void bar() { { } } }'
+        r = self._check(code, 'SONAR_EMPTY_NESTED_BLOCK')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_string_concat_loop(self):
+        code = 'class Foo { String bar() { String s=""; for(int i=0;i<10;i++) { s+=i; } return s; } }'
+        r = self._check(code, 'SONAR_STRING_CONCAT_LOOP')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_exception_rethrow(self):
+        code = 'class Foo { void bar() { try { int x=1; } catch(Exception e) { throw e; } } }'
+        r = self._check(code, 'SONAR_EXCEPTION_RETHROW')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_ignored_return(self):
+        r = self._check('class Foo { void bar(String s) { s.trim(); } }', 'SONAR_IGNORED_RETURN')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_duplicate_string_literal(self):
+        bad = ('class Foo { void bar() { String a="x";String b="x";String c="x";'
+               'String d="x";String e="x"; } }')
+        r = self._check(bad, 'SONAR_DUPLICATE_STRING_LITERAL')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_too_many_throws(self):
+        code = 'class Foo { void bar() throws Exception, Error, Throwable, RuntimeException {} }'
+        r = self._check(code, 'SONAR_TOO_MANY_THROWS')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_string_lhs_equals(self):
+        code = 'class Foo { boolean bar(String s) { return s.equals("x"); } }'
+        r = self._check(code, 'SONAR_STRING_LHS_EQUALS')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_finalize_protected(self):
+        code = 'class Foo { protected void finalize() { System.out.println(); } }'
+        r = self._check(code, 'SONAR_FINALIZE_PROTECTED')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_protected_field(self):
+        code = 'class Foo { protected int x; }'
+        r = self._check(code, 'SONAR_PROTECTED_FIELD')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_url_hashcode(self):
+        code = 'class Foo { int bar(java.net.URL u) { return u.hashCode(); } }'
+        r = self._check(code, 'SONAR_URL_HASHCODE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_string_intern(self):
+        code = 'class Foo { String bar(String s) { return s.intern(); } }'
+        r = self._check(code, 'SONAR_STRING_INTERN')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_thread_wait(self):
+        code = 'class Foo { void bar() throws Exception { Thread t = new Thread(); t.wait(); } }'
+        r = self._check(code, 'SONAR_THREAD_WAIT')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_manual_thread(self):
+        r = self._check('class Foo { void bar() { new Thread(); } }', 'SONAR_MANUAL_THREAD')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_getclass_auth(self):
+        r = self._check('class Foo { Class<?> bar() { return this.getClass(); } }', 'SONAR_GETCLASS_AUTH')
+        self.assertGreaterEqual(len(r), 1)
+
+
+class TestSonarQubeSeven(unittest.TestCase):
+    def setUp(self):
+        self.config = InspectionConfig()
+        for cat in ['sonar_correctness', 'sonar_robustness', 'sonar_performance_seven', 'sonar_api_usage']:
+            self.config.config['rules'][cat] = {'enabled': True}
+        self.inspector = JavaCodeInspector(self.config)
+
+    def _check(self, code, rule_id):
+        with tempfile.NamedTemporaryFile(suffix='.java', mode='w', delete=False, encoding='utf-8') as f:
+            f.write(code)
+            tmp = f.name
+        try:
+            issues = self.inspector.inspect_file(tmp)
+            return [i for i in issues if i.rule_id == rule_id]
+        finally:
+            os.unlink(tmp)
+
+    def test_sonar_break_label(self):
+        code = 'class Foo { void bar() { outer: for(int i=0;i<10;i++) { break outer; } } }'
+        r = self._check(code, 'SONAR_BREAK_LABEL')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_only_default_switch(self):
+        code = 'class Foo { void bar(int x) { switch(x) { default: break; } } }'
+        r = self._check(code, 'SONAR_ONLY_DEFAULT_SWITCH')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_sb_to_string(self):
+        code = 'class Foo { void bar() { java.lang.StringBuilder sb = new StringBuilder(); bar(sb); } void bar(String s) {} }'
+        r = self._check(code, 'SONAR_SB_TO_STRING')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_to_string_null(self):
+        code = 'class Foo { public String toString() { return null; } }'
+        r = self._check(code, 'SONAR_TOSTRING_NULL')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_compareto_without_equals(self):
+        code = 'class Foo implements Comparable<Foo> { public int compareTo(Foo o) { return 0; } }'
+        r = self._check(code, 'SONAR_COMPARETO_WITHOUT_EQUALS')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_thread_run_instead_start(self):
+        code = 'class Foo { void bar() { Thread t = new Thread(); t.run(); } }'
+        r = self._check(code, 'SONAR_THREAD_RUN_INSTEAD_START')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_thread_sleep_zero(self):
+        code = 'class Foo { void bar() throws Exception { Thread.sleep(0); } }'
+        r = self._check(code, 'SONAR_THREAD_SLEEP_ZERO')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_literal_eq(self):
+        code = 'class Foo { boolean bar() { return "a" == "b"; } }'
+        r = self._check(code, 'SONAR_LITERAL_EQ')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_catch_rethrow(self):
+        code = 'class Foo { void bar() { try { int x=1; } catch(Exception e) { throw e; } } }'
+        r = self._check(code, 'SONAR_CATCH_RETHROW')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_empty_list(self):
+        code = 'class Foo { java.util.List x = java.util.Collections.EMPTY_LIST; }'
+        r = self._check(code, 'SONAR_EMPTY_LIST')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_enum_mutable_field(self):
+        code = 'enum Foo { A; int x; }'
+        r = self._check(code, 'SONAR_ENUM_MUTABLE_FIELD')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_multiple_public_classes(self):
+        code = 'public class Foo {} public class Bar {}'
+        r = self._check(code, 'SONAR_MULTIPLE_PUBLIC_CLASSES')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_unchecked_warning(self):
+        code = 'class Foo { @SuppressWarnings("unchecked") void bar() {} }'
+        r = self._check(code, 'SONAR_UNCHECKED_WARNING')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_division_by_zero(self):
+        code = 'class Foo { int bar() { return 1 / 0; } }'
+        r = self._check(code, 'SONAR_DIVISION_BY_ZERO')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_return_null_array(self):
+        code = 'class Foo { int[] bar() { return null; } }'
+        r = self._check(code, 'SONAR_RETURN_NULL_ARRAY')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_finally_return_seven(self):
+        code = 'class Foo { int bar() { try { return 1; } finally { return 2; } } }'
+        r = self._check(code, 'SONAR_FINALLY_RETURN_SEVEN')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_to_string_on_string(self):
+        code = 'class Foo { String bar(String s) { return s.toString(); } }'
+        r = self._check(code, 'SONAR_TOSTRING_ON_STRING')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_instanceof_wrapper(self):
+        code = 'class Foo { boolean bar(Object o) { return o instanceof Integer; } }'
+        r = self._check(code, 'SONAR_INSTANCEOF_WRAPPER')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_size_eq_zero(self):
+        code = 'class Foo { boolean bar(java.util.List l) { return l.size() == 0; } }'
+        r = self._check(code, 'SONAR_SIZE_EQ_ZERO')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_getbytes_charset(self):
+        r = self._check('class Foo { byte[] bar(String s) { return s.getBytes(); } }', 'SONAR_GETBYTES_CHARSET')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_properties_api(self):
+        r = self._check('class Foo { void bar() { new java.util.Properties(); } }', 'SONAR_PROPERTIES_API')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_simple_date_format(self):
+        r = self._check('class Foo { void bar() { new java.text.SimpleDateFormat(); } }', 'SONAR_SIMPLE_DATE_FORMAT')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_class_forname(self):
+        r = self._check('class Foo { Class<?> bar() throws Exception { return Class.forName("x"); } }', 'SONAR_CLASS_FORNAME')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_clone_override(self):
+        r = self._check('class Foo { public Object clone() { return this; } }', 'SONAR_CLONE_OVERRIDE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_thread_yield_api(self):
+        r = self._check('class Foo { void bar() { Thread.yield(); } }', 'SONAR_THREAD_YIELD_API')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_sync_class_usage(self):
+        r = self._check('class Foo { void bar() { new StringBuffer(); } }', 'SONAR_SYNC_CLASS_USAGE')
+        self.assertGreaterEqual(len(r), 1)
+
+    def test_sonar_valueof_redundant(self):
+        r = self._check('class Foo { String bar() { return String.valueOf("x"); } }', 'SONAR_VALUEOF_REDUNDANT')
+        self.assertGreaterEqual(len(r), 1)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

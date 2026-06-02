@@ -354,7 +354,7 @@ class SonarQubeCheckerFull:
                 body = node.body if isinstance(node.body, list) else \
                        getattr(getattr(node, "body", None), "statements", []) or []
                 for stmt in body:
-                    if isinstance(stmt, javalang_tree.ExpressionStatement):
+                    if isinstance(stmt, javalang_tree.StatementExpression):
                         expr = getattr(stmt, "expression", None)
                         if isinstance(expr, javalang_tree.MethodInvocation):
                             member = getattr(expr, "member", "")
