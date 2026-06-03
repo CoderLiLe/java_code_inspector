@@ -32,7 +32,30 @@ java_code_inspector/
 │       ├── hooks.py              # Git钩子安装
 │       ├── inspector.py          # 核心检查引擎
 │       ├── models.py             # 数据模型
-│       └── reporter.py           # 报告生成器
+│       ├── reporter.py           # 报告生成器
+│       ├── alibaba_rules.py      # 阿里规约入口（委派到 alibaba_rules/ 包）
+│       └── alibaba_rules/        # 阿里规约检查器包（19个模块）
+│           ├── __init__.py       # AlibabaRulesChecker 类
+│           ├── base.py           # BaseChecker 基类
+│           ├── naming.py         # 命名风格 (27 条)
+│           ├── constant.py       # 常量定义 (5 条)
+│           ├── code_style.py     # 代码风格 (14 条)
+│           ├── oop.py            # 面向对象 (41 条)
+│           ├── date.py           # 日期时间 (11 条)
+│           ├── collection.py     # 集合处理 (22 条)
+│           ├── control.py        # 控制语句 (15 条)
+│           ├── concurrency.py    # 并发处理 (20 条)
+│           ├── comment.py        # 注释规范 (11 条)
+│           ├── exception.py      # 异常处理 (15 条)
+│           ├── logging.py        # 日志规约 (6 条)
+│           ├── other.py          # 其他 (8 条)
+│           ├── method_length.py  # 方法长度 (1 条)
+│           ├── frontend_backend.py # 前后端规约 (17 条)
+│           ├── security.py       # 安全规约 (13 条)
+│           ├── sql.py            # MySQL 数据库 (40 条)
+│           ├── unit_test.py      # 单元测试 (5 条)
+│           ├── engineering.py    # 工程结构 (18 条)
+│           └── design.py         # 设计规约 (6 条)
 ├── tests/
 │   ├── __init__.py
 │   ├── test_config.json
@@ -41,7 +64,7 @@ java_code_inspector/
 │       ├── GoodExample.java
 │       └── TestExample.java
 ├── docs/                         # 文档目录
-│   ├── ALIBABA_RULES.md          # 阿里规约规则总表（168条）
+│   ├── ALIBABA_RULES.md          # 阿里规约规则总表（293条）
 │   ├── ARCHITECTURE.md           # 架构说明
 │   └── CONFIG.md                 # 配置参考
 ├── java_inspector_config.json    # 默认配置文件

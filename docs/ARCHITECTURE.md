@@ -11,7 +11,16 @@ cli.py                Argument parsing, orchestration
     ├──> config.py           InspectionConfig — rule toggles, thresholds, excludes
     ├──> inspector.py        JavaCodeInspector — core engine, built-in checks
     │       │
-    │       ├──> alibaba_rules.py      AlibabaRulesChecker — 168 rules, 19 categories
+    │       ├──> alibaba_rules.py         Re-exports AlibabaRulesChecker
+    │       │       │
+    │       │       └──> alibaba_rules/   293 rules, 19 categories, 21 files
+    │       │               ├── __init__.py   AlibabaRulesChecker (facade)
+    │       │               ├── base.py       BaseChecker
+    │       │               ├── naming.py     (27 rules)
+    │       │               ├── oop.py        (41 rules)
+    │       │               ├── sql.py        (40 rules)
+    │       │               └── ... 14 more
+    │       │
     │       ├──> sonarqube_rules.py     SonarQube checker base
     │       └──> sonarqube_rules_*.py   16 extension checkers
     │
@@ -34,7 +43,7 @@ cli.py                Argument parsing, orchestration
 |-------|------|------|
 | `InspectionConfig` | `config.py` | All configuration state |
 | `JavaCodeInspector` | `inspector.py` | Core inspection engine |
-| `AlibabaRulesChecker` | `alibaba_rules.py` | 168 Alibaba rules (19 categories) |
+| `AlibabaRulesChecker` | `alibaba_rules/__init__.py` | 293 Alibaba rules (19 categories, 21 files) |
 | `InspectionReporter` | `reporter.py` | Multi-format report generation |
 | `CICDIntegrator` | `ci_cd.py` | Quality gate enforcement |
 | `CodeIssue` (dataclass) | `models.py` | Single issue: file, line, id, severity, message |
@@ -70,6 +79,7 @@ All methods are called sequentially from `run_all()` and guarded by `self.config
 
 Add a new rule set by:
 
-1. Create a class with `run_all(self, tree, file_path, content)` method
-2. In `inspector.py`, instantiate it and call `.run_all()` inside `inspect_file()`
-3. Add a corresponding toggle in `config.py` defaults and `java_inspector_config.json`
+1. Create a checker class extending `BaseChecker` in `alibaba_rules/` with a `check_*` method
+2. Register the checker class in the `checker_classes` list in `alibaba_rules/__init__.py`
+3. Add the method name mapping in `AlibabaRulesChecker._get_method_name()`
+4. Add a corresponding toggle in `config.py` defaults and `java_inspector_config.json`
