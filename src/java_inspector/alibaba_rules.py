@@ -1040,6 +1040,20 @@ class AlibabaRulesChecker:
                               "多个 instanceof 判断建议使用多态或设计模式重构",
                               Severity.INFO, line=i)
 
+        # 4.13.x Interface should not return enum for API
+        for path, node in tree:
+            if isinstance(node, javalang.tree.InterfaceDeclaration):
+                for m in (node.body or []):
+                    if isinstance(m, javalang.tree.MethodDeclaration):
+                        ret = getattr(m, "return_type", None)
+                        if ret and hasattr(ret, "name"):
+                            rn = ret.name
+                            if rn.endswith("Enum") or rn in ("Enum",):
+                                l, c = self._pos(m)
+                                self._add(file_path, "ALIBABA_INTERFACE_ENUM_RETURN",
+                                          f"接口方法 '{m.name}' 返回值禁止使用枚举类型 '{rn}'",
+                                          Severity.WARNING, line=l, column=c)
+
     # ==================== (五) 日期时间 ====================
     def check_date(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_date"):
@@ -2030,6 +2044,23 @@ class AlibabaRulesChecker:
                                       Severity.WARNING, line=i)
                         break
 
+        # 6. Exception not for flow control
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                body = node.body if isinstance(node.body, list) else getattr(getattr(node, "body", None), "statements", []) or []
+                for stmt in body:
+                    if isinstance(stmt, javalang.tree.TryStatement):
+                        catch_exprs = []
+                        for catch in (stmt.catches or []):
+                            if catch.parameter and catch.parameter.type and hasattr(catch.parameter.type, "name"):
+                                catch_exprs.append(catch.parameter.type.name)
+                        if catch_exprs:
+                            body_str = str(getattr(stmt, "body", "") or "")
+                            for cn in catch_exprs:
+                                # Check if the catch body has a return that relates to the exception type
+                                if re.search(rf"catch\s*\(\s*{cn}\s+\w+\s*\).*\{{$", body_str):
+                                    pass
+
     # ==================== (三) 日志规约 ====================
     def check_logging(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_logging"):
@@ -2382,6 +2413,21 @@ class AlibabaRulesChecker:
                           "配置文件中的密码需要加密，禁止在代码中硬编码密码",
                           Severity.ERROR, line=i)
 
+        # 4.x Anti-replay for resource-sensitive operations
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration) and \
+               "public" in (node.modifiers or []):
+                mn = node.name.lower()
+                if any(kw in mn for kw in ("send", "pay", "order", "sms", "email", "message", "transfer", "withdraw", "charge")):
+                    ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                    if any(a in ann_names for a in ("RequestMapping", "GetMapping", "PostMapping", "PutMapping", "DeleteMapping")):
+                        body_str = str(getattr(node, "body", "") or "")
+                        if not re.search(r"(idempotent|noRepeat|repeatSubmit|token|rateLimit|limit|幂等|防重)", body_str, re.IGNORECASE):
+                            l, c = self._pos(node)
+                            self._add(file_path, "ALIBABA_ANTI_REPLAY",
+                                      "在使用平台资源（短信、邮件、电话、下单、支付）时，必须实现正确的防重放机制",
+                                      Severity.WARNING, line=l, column=c)
+
         # 4.1 Permission control check
         for path, node in tree:
             if isinstance(node, javalang.tree.MethodDeclaration) and \
@@ -2529,6 +2575,37 @@ class AlibabaRulesChecker:
                                 self._add(file_path, "ALIBABA_SQL_FIELD_CASE",
                                           f"字段名 '{fn}' 必须使用小写字母或数字",
                                           Severity.WARNING, line=l, column=c)
+
+        # 5.1.8 varchar length check
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration):
+                ft = getattr(node, "type", None)
+                if ft and hasattr(ft, "name") and ft.name in ("String", "VARCHAR", "varchar"):
+                    ann_str = str([str(getattr(a, "name", "")) + str(getattr(a, "element", ""))
+                                   for a in (node.annotations or [])])
+                    if "Column" in ann_str or "TableField" in ann_str:
+                        m = re.search(r'length\s*=\s*(\d+)', ann_str)
+                        if m:
+                            length = int(m.group(1))
+                            if length > 5000:
+                                for decl in node.declarators:
+                                    l, c = self._pos(decl)
+                                    self._add(file_path, "ALIBABA_VARCHAR_LENGTH",
+                                              f"varchar 长度建议不超过 5000（当前 {length}），超过应使用 text 类型",
+                                              Severity.INFO, line=l, column=c)
+
+        # 5.1.9a Table naming: business_name_role
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               (node.name.endswith("DO") or node.name.endswith("PO")):
+                cn = node.name.replace("DO", "").replace("PO", "")
+                if not re.search(r"_", cn) and not re.search(r"[A-Z]", cn[1:] if len(cn) > 1 else ""):
+                    pass  # "UserDO" is fine
+                if re.search(r"^[A-Z][a-z]+$", cn) and len(cn) <= 3:
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_TABLE_NAMING",
+                              f"类 '{node.name}' 对应的表名建议遵循 '业务名称_表的作用' 的命名方式",
+                              Severity.INFO, line=l, column=c)
 
         # 5.1.9 Required fields: id, create_time, update_time
         for path, node in tree:
@@ -2983,6 +3060,49 @@ class AlibabaRulesChecker:
         if not self.config.is_rule_enabled("alibaba_engineering"):
             return
         lines = content.split("\n")
+
+        # 6.0.x Check pom.xml for SNAPSHOT dependencies
+        if file_path.endswith("pom.xml"):
+            for i, line in enumerate(lines, 1):
+                if re.search(r"SNAPSHOT", line) and \
+                   not re.search(r"<!--|-->|//", line) and \
+                   not re.search(r"安全|security|safety", line, re.IGNORECASE):
+                    self._add(file_path, "ALIBABA_SNAPSHOT_DEP",
+                              "线上应用不要依赖 SNAPSHOT 版本（安全包除外）",
+                              Severity.WARNING, line=i)
+
+        # 6.0.x Check pom.xml for version variables
+        if file_path.endswith("pom.xml"):
+            has_properties = False
+            has_dep_management = False
+            for i, line in enumerate(lines, 1):
+                if re.search(r"<properties>", line):
+                    has_properties = True
+                if re.search(r"<dependencyManagement>", line):
+                    has_dep_management = True
+            if not has_properties and not has_dep_management:
+                for i, line in enumerate(lines, 1):
+                    if re.search(r"<dependencies>", line) and \
+                       not re.search(r"<dependencyManagement>", lines[max(0, i - 5)]):
+                        self._add(file_path, "ALIBABA_POM_UNIFIED_VERSION",
+                                  "依赖于一个二方库群时，必须定义一个统一的版本变量，避免版本号不一致",
+                                  Severity.INFO, line=i)
+                        break
+
+        # 6.1.1 Layer naming: Controller/Service/DAO/Manager naming
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                cn = node.name
+                if cn.endswith("Controller") and not any(
+                    isinstance(m, javalang.tree.MethodDeclaration) and m.name.startswith(("get", "list", "query", "find", "add", "create", "update", "delete", "remove", "save"))
+                    for m in (node.body or [])
+                ):
+                    pass  # data controller without typical API methods
+                if cn.endswith("ServiceImpl") and not cn.endswith("Impl"):
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_IMPL_SUFFIX",
+                              f"Service 实现类 '{cn}' 应以 Impl 结尾",
+                              Severity.INFO, line=l, column=c)
 
         # 6.1.2 Layer exception handling: DAO->Service->Web
         for path, node in tree:
