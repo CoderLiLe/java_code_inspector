@@ -1,1 +1,2 @@
-from java_inspector.alibaba_rules import AlibabaRulesChecker  # noqa
+"""阿里规约入口 — 委派到 alibaba_rules/ 包"""
+from java_inspector.alibaba_rules import AlibabaRulesChecker

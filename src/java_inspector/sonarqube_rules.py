@@ -1,5 +1,5 @@
 """SonarQube 规则入口 — 委派到 sonarqube/ 包"""
-from java_inspector.sonarqube import (  # noqa
+from java_inspector.sonarqube import (
     SonarQubeChecker,
     SonarQubeCheckerExt,
     SonarQubeCheckerFull,

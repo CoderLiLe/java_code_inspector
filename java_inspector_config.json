@@ -74,6 +74,15 @@
     },
     "alibaba_other": {
       "enabled": true
+    },
+    "sonar_bugs": {
+      "enabled": true
+    },
+    "sonar_code_smell": {
+      "enabled": true
+    },
+    "sonar_security": {
+      "enabled": true
     }
   },
   "auto_fix": {

@@ -82,6 +82,18 @@ Prefix `alibaba_` rules map to `AlibabaRulesChecker` check methods (defined in `
 | `alibaba_design` | `alibaba_rules/design.py` | Single responsibility, composition, inheritance |
 | `alibaba_engineering` | `alibaba_rules/engineering.py` | Layer exceptions, package naming, remote timeout |
 
+## SonarQube Rule Config Keys
+
+Prefix `sonar_` rules map to `SonarQubeChecker` classes (defined in `sonarqube/` package, 17 modules). The main categories are listed below; additional keys exist for each extension checker (e.g. `sonar_performance`, `sonar_concurrency`).
+
+| Config Key | Checker Class | Rules |
+|---|---|---|
+| `sonar_bugs` | `SonarQubeChecker` | Bug patterns: redundant booleans, string equality, thread safety, dead store |
+| `sonar_code_smell` | `SonarQubeChecker` | Code smells: unused fields, equals/hashCode, interface types, locale |
+| `sonar_security` | `SonarQubeChecker` | Security: OS command injection, SQL injection, SHA-1, System.out |
+| `sonar_ext` | `SonarQubeCheckerExt` | Extended rule set |
+| `sonar_full` / `sonar_fourth` … `sonar_seventeen` | Extended checkers | Batch-specific rule additions (16 extension checkers) |
+
 ## CLI Options
 
 | Flag | Default | Description |
