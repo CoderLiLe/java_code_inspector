@@ -679,6 +679,32 @@ class AlibabaRulesChecker:
                                                   f"POJO 类属性 '{decl.name}' 必须使用包装数据类型，而非基本类型 '{ft.name}'",
                                                   Severity.WARNING, line=l, column=c)
 
+        # 4.8 DO field type matching DB column types
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration) and \
+               node.name.endswith(("DO", "PO", "Entity")):
+                for field in (node.body or []):
+                    if isinstance(field, javalang.tree.FieldDeclaration):
+                        ft = getattr(field, "type", None)
+                        if ft and hasattr(ft, "name"):
+                            for decl in field.declarators:
+                                fn = decl.name.lower()
+                                ftn = ft.name
+                                # id/Id fields should be Long for bigint
+                                if (fn in ("id",) or fn.endswith("id")) and \
+                                   ftn in ("int", "Integer"):
+                                    l, c = self._pos(decl)
+                                    self._add(file_path, "ALIBABA_DO_FIELD_TYPE_MISMATCH",
+                                              f"DO 字段 '{decl.name}' 类型为 {ftn}，数据库 bigint 应对应 Long 类型",
+                                              Severity.WARNING, line=l, column=c)
+                                # status/type fields should be Integer (nullable)
+                                if fn in ("status", "type", "state", "flag") and \
+                                   ftn == "int":
+                                    l, c = self._pos(decl)
+                                    self._add(file_path, "ALIBABA_DO_FIELD_TYPE_MISMATCH",
+                                              f"DO 字段 '{decl.name}' 类型为 int，建议使用 Integer（可为 null）",
+                                              Severity.INFO, line=l, column=c)
+
         for path, node in tree:
             if isinstance(node, javalang.tree.ClassDeclaration):
                 implements_serializable = any(
@@ -1423,6 +1449,17 @@ class AlibabaRulesChecker:
                               "泛型通配符<? extends T>的集合不能使用 add 方法",
                               Severity.INFO, line=i, column=line.find("?"))
 
+        # 6.12 Wildcard super get check
+        for i, line in enumerate(lines, 1):
+            if re.search(r"<\?\s+super\s+\w+>\s+\w+", line) and \
+               re.search(r"\.\s*get\s*\(", line) and \
+               not re.search(r"//", line):
+                m = re.search(r"<\?\s+super\s+(\w+)>", line)
+                if m:
+                    self._add(file_path, "ALIBABA_WILDCARD_SUPER_GET",
+                              f"泛型通配符<? super {m.group(1)}> 的集合不能安全使用 get 方法，只能保证是 Object",
+                              Severity.WARNING, line=i, column=line.find("?"))
+
         # 6.15 Comparator conditions
         for path, node in tree:
             if isinstance(node, javalang.tree.ClassDeclaration):
@@ -1609,6 +1646,27 @@ class AlibabaRulesChecker:
                     self._add(file_path, "ALIBABA_COMPLEX_CONDITION",
                               "复杂的条件判断建议将结果赋值给一个有意义的布尔变量名，提高可读性",
                               Severity.INFO, line=i)
+
+        # 8.13 High-concurrency: avoid == as break/exit condition
+        for path, node in tree:
+            if isinstance(node, (javalang.tree.SynchronizedStatement, javalang.tree.MethodDeclaration)):
+                mods = getattr(node, "modifiers", []) or []
+                is_sync = "synchronized" in mods or isinstance(node, javalang.tree.SynchronizedStatement)
+                if is_sync:
+                    body_stmts = []
+                    if isinstance(node, javalang.tree.SynchronizedStatement):
+                        body_stmts = node.body.statements if hasattr(node.body, "statements") else (node.body if isinstance(node.body, list) else [])
+                    else:
+                        body_stmts = node.body if isinstance(node.body, list) else getattr(getattr(node, "body", None), "statements", []) or []
+                    for stmt in body_stmts:
+                        if isinstance(stmt, javalang.tree.IfStatement):
+                            cond_str = str(stmt.expression)
+                            if re.search(r"==\s*\d+$", cond_str) and \
+                               re.search(r"\b(break|return|exit)\b", str(stmt.then_statement)):
+                                l = stmt.position.line if stmt.position else 0
+                                self._add(file_path, "ALIBABA_HIGH_CONCURRENCY_EQUAL",
+                                          "高并发场景中避免使用等值判断(==)作为中断条件，建议用大于/小于区间判断",
+                                          Severity.WARNING, line=l)
 
     # ==================== (七) 并发处理 ====================
     def check_concurrency(self, tree, file_path: str, content: str):
@@ -2096,13 +2154,39 @@ class AlibabaRulesChecker:
                     cp = catch.parameter if hasattr(catch, "parameter") else None
                     if cp and hasattr(cp, "type") and cp.type:
                         caught_type = cp.type.name
+                        caught_super = {"Exception": ("RuntimeException", "IOException", "SQLException"),
+                                        "RuntimeException": ("IllegalArgumentException", "NullPointerException",
+                                                             "IndexOutOfBoundsException", "IllegalStateException",
+                                                             "UnsupportedOperationException")}
                         for stmt in (catch.block.statements if hasattr(catch.block, "statements") else []):
                             if isinstance(stmt, javalang.tree.ThrowStatement) and \
                                hasattr(stmt, "expression") and stmt.expression and \
                                hasattr(stmt.expression, "type") and stmt.expression.type:
                                 thrown_type = stmt.expression.type.name
                                 if thrown_type not in (caught_type, "Exception", "RuntimeException", "Throwable"):
-                                    pass
+                                    l = stmt.position.line if stmt.position else 0
+                                    self._add(file_path, "ALIBABA_EXCEPTION_TYPE_MISMATCH",
+                                              f"catch 捕获 '{caught_type}' 但抛出不兼容类型 '{thrown_type}'，应匹配或为父类",
+                                              Severity.WARNING, line=l)
+
+        # 11. Distinguish stable vs non-stable code in catch
+        for path, node in tree:
+            if isinstance(node, javalang.tree.TryStatement):
+                if len(node.catches or []) == 1:
+                    catch = node.catches[0]
+                    if catch.parameter and catch.parameter.type and \
+                       hasattr(catch.parameter.type, "name") and \
+                       catch.parameter.type.name == "Exception":
+                        body_stmts = node.body if hasattr(node, "body") and isinstance(node.body, list) else \
+                                    getattr(getattr(node, "body", None), "statements", []) or []
+                        invocations = [s for s in body_stmts
+                                       if isinstance(s, (javalang.tree.MethodInvocation,
+                                                         javalang.tree.StatementExpression))]
+                        if len(invocations) >= 3 and len(node.catches) == 1:
+                            l = catch.parameter.position.line if catch.parameter.position else 0
+                            self._add(file_path, "ALIBABA_CATCH_TYPE_DISTINGUISH",
+                                      "catch 需分清稳定代码与非稳定代码，多个可能异常的方法建议分开 try-catch 处理",
+                                      Severity.INFO, line=l)
 
         # 10. Return null with annotation check
         for path, node in tree:
@@ -3522,6 +3606,21 @@ class AlibabaRulesChecker:
                     self._add(file_path, "ALIBABA_METHOD_TOO_LONG",
                               f"方法 '{node.name}' 超过 80 行，应进行拆分",
                               Severity.WARNING, line=l, column=c)
+
+        # 6.5.5 Query params >2 should not use Map
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                mn = node.name.lower()
+                if any(mn.startswith(kw) for kw in ("query", "find", "search", "list", "select", "get")):
+                    params = node.parameters or []
+                    if len(params) > 2:
+                        for param in params:
+                            pt = getattr(param, "type", None)
+                            if pt and hasattr(pt, "name") and pt.name in ("Map", "HashMap", "LinkedHashMap"):
+                                l, c = self._pos(node)
+                                self._add(file_path, "ALIBABA_QUERY_PARAM_MAP",
+                                          f"查询方法 '{node.name}' 超过 2 个参数时禁止使用 Map 传输，应使用 DTO",
+                                          Severity.WARNING, line=l, column=c)
 
         # 6.6.1 POJO must override toString
         for path, node in tree:
