@@ -10,23 +10,25 @@ import javalang
 from java_inspector.models import CodeIssue, CodeMetrics, Severity
 from java_inspector.config import InspectionConfig
 from java_inspector.alibaba_rules import AlibabaRulesChecker
-from java_inspector.sonarqube_rules import SonarQubeChecker
-from java_inspector.sonarqube_rules_ext import SonarQubeCheckerExt
-from java_inspector.sonarqube_rules_full import SonarQubeCheckerFull
-from java_inspector.sonarqube_rules_fourth import SonarQubeCheckerFourth
-from java_inspector.sonarqube_rules_five import SonarQubeCheckerFive
-from java_inspector.sonarqube_rules_six import SonarQubeCheckerSix
-from java_inspector.sonarqube_rules_seven import SonarQubeCheckerSeven
-from java_inspector.sonarqube_rules_eight import SonarQubeCheckerEight
-from java_inspector.sonarqube_rules_nine import SonarQubeCheckerNine
-from java_inspector.sonarqube_rules_ten import SonarQubeCheckerTen
-from java_inspector.sonarqube_rules_eleven import SonarQubeCheckerEleven
-from java_inspector.sonarqube_rules_twelve import SonarQubeCheckerTwelve
-from java_inspector.sonarqube_rules_thirteen import SonarQubeCheckerThirteen
-from java_inspector.sonarqube_rules_fourteen import SonarQubeCheckerFourteen
-from java_inspector.sonarqube_rules_fifteen import SonarQubeCheckerFifteen
-from java_inspector.sonarqube_rules_sixteen import SonarQubeCheckerSixteen
-from java_inspector.sonarqube_rules_seventeen import SonarQubeCheckerSeventeen
+from java_inspector.sonarqube import (
+    SonarQubeChecker,
+    SonarQubeCheckerExt,
+    SonarQubeCheckerFull,
+    SonarQubeCheckerFourth,
+    SonarQubeCheckerFive,
+    SonarQubeCheckerSix,
+    SonarQubeCheckerSeven,
+    SonarQubeCheckerEight,
+    SonarQubeCheckerNine,
+    SonarQubeCheckerTen,
+    SonarQubeCheckerEleven,
+    SonarQubeCheckerTwelve,
+    SonarQubeCheckerThirteen,
+    SonarQubeCheckerFourteen,
+    SonarQubeCheckerFifteen,
+    SonarQubeCheckerSixteen,
+    SonarQubeCheckerSeventeen,
+)
 
 
 class JavaCodeInspector:
