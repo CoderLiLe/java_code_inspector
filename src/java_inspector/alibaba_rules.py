@@ -1054,6 +1054,30 @@ class AlibabaRulesChecker:
                                           f"接口方法 '{m.name}' 返回值禁止使用枚举类型 '{rn}'",
                                           Severity.WARNING, line=l, column=c)
 
+        # 4.26 Access control: prefer private over default (package-private)
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration):
+                mods = node.modifiers or []
+                if not any(m in mods for m in ("private", "public", "protected")) and \
+                   not any("static" in mods and "final" in mods):
+                    for decl in node.declarators:
+                        if not decl.name.startswith("serialVersionUID"):
+                            l, c = self._pos(decl)
+                            self._add(file_path, "ALIBABA_ACCESS_DEFAULT",
+                                      f"字段 '{decl.name}' 缺少访问修饰符，建议使用 private",
+                                      Severity.INFO, line=l, column=c)
+            elif isinstance(node, javalang.tree.MethodDeclaration):
+                mods = node.modifiers or []
+                mn = node.name
+                if not any(m in mods for m in ("private", "public", "protected")) and \
+                   not mn.startswith(("get", "set", "is")) and \
+                   "static" not in mods and \
+                   "override" not in str(getattr(node, "annotations", "")).lower():
+                    l, c = self._pos(node)
+                    self._add(file_path, "ALIBABA_ACCESS_DEFAULT_METHOD",
+                              f"方法 '{mn}' 缺少访问修饰符，建议明确指定为 private/protected/public",
+                              Severity.INFO, line=l, column=c)
+
     # ==================== (五) 日期时间 ====================
     def check_date(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_date"):
@@ -1156,6 +1180,14 @@ class AlibabaRulesChecker:
                not re.search(r"Calendar\.(YEAR|MONTH|DATE|HOUR|MINUTE|SECOND|MILLISECOND)", line):
                 self._add(file_path, "ALIBABA_CALENDAR_MAGIC",
                           "Calendar 获取值请使用常量如 Calendar.DAY_OF_MONTH 而非数字",
+                          Severity.INFO, line=i)
+
+        # 1.6 Leap year: 2/29 hardcoded
+        for i, line in enumerate(lines, 1):
+            if re.search(r"(02-29|02/29|2-29|2/29|\"Feb 29\"|'Feb 29'|February 29|2月29)", line) and \
+               not re.search(r"//.*闰年|//.*leap|//.*valid", line, re.IGNORECASE):
+                self._add(file_path, "ALIBABA_LEAP_YEAR_FEB29",
+                          "避免硬编码 2 月 29 日，闰年 2 月 29 日需要特殊处理",
                           Severity.INFO, line=i)
 
     # ==================== (六) 集合处理 ====================
@@ -1360,6 +1392,22 @@ class AlibabaRulesChecker:
                         self._add(file_path, "ALIBABA_COMPARATOR_CONDITIONS",
                                   "Comparator 实现类需满足自反性、传递性、对称性，否则会抛 IllegalArgumentException",
                                   Severity.WARNING, line=l, column=c)
+
+        # 6.15 Use enum for fixed-range values
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration):
+                ft = getattr(node, "type", None)
+                if ft and hasattr(ft, "name") and ft.name == "String" and \
+                   "static" in (node.modifiers or []) and "final" in (node.modifiers or []):
+                    for decl in node.declarators:
+                        if decl.initializer and isinstance(decl.initializer, javalang.tree.Literal) and \
+                           len(str(decl.initializer).strip('"')) > 0:
+                            val = str(decl.initializer).strip('"')
+                            if val in ("0", "1", "Y", "N", "YES", "NO", "TRUE", "FALSE", "SUCCESS", "FAIL"):
+                                l, c = self._pos(decl)
+                                self._add(file_path, "ALIBABA_ENUM_FIXED_VALUE",
+                                          f"固定范围值 '{decl.name}' 建议使用枚举类型定义",
+                                          Severity.INFO, line=l, column=c)
 
         # ==================== (八) 控制语句 ====================
     def check_control(self, tree, file_path: str, content: str):
@@ -2247,6 +2295,25 @@ class AlibabaRulesChecker:
                           "在接口路径中不要加入版本号，版本控制在 HTTP 头信息中体现",
                           Severity.INFO, line=i)
 
+        # 10.x HTTP URL length check (>2048 bytes)
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@GetMapping|@RequestMapping.*GET", line):
+                url_match = re.search(r'"([^"]{2048,})"', line)
+                if url_match:
+                    self._add(file_path, "ALIBABA_URL_LENGTH",
+                              "HTTP 请求通过 URL 传递参数时，不能超过 2048 字节",
+                              Severity.WARNING, line=i)
+
+        # 10.x HTTP body length check
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@RequestBody", line) and \
+               re.search(r"@PostMapping|@PutMapping|@RequestMapping", line):
+                body_type = re.search(r"@RequestBody\s+(\w+)", line)
+                if body_type and body_type.group(1) in ("String", "Map", "HashMap", "JSONObject"):
+                    self._add(file_path, "ALIBABA_BODY_LENGTH",
+                              "HTTP 请求通过 body 传递内容时，必须控制长度，超出最大长度后端解析会出错",
+                              Severity.INFO, line=i)
+
         # 10.2 Return empty [] or {} for null data
         for path, node in tree:
             if isinstance(node, javalang.tree.MethodDeclaration):
@@ -2357,6 +2424,18 @@ class AlibabaRulesChecker:
                         l, c = self._pos(node)
                         self._add(file_path, "ALIBABA_API_COMMENT",
                                   f"API 方法 '{node.name}' 必须添加注释说明接口功能",
+                                  Severity.INFO, line=l, column=c)
+
+        # 10.x @ExceptionHandler with errorMessage
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                if "ExceptionHandler" in ann_names:
+                    body_str = str(getattr(node, "body", "") or "")
+                    if not re.search(r"errorMessage|error_message|errorCode|error_code|message|msg", body_str):
+                        l, c = self._pos(node)
+                        self._add(file_path, "ALIBABA_ERROR_MESSAGE",
+                                  "错误处理应返回 errorCode 和 errorMessage 信息",
                                   Severity.INFO, line=l, column=c)
 
         # 10.16 View template: no complex logic
@@ -3088,6 +3167,21 @@ class AlibabaRulesChecker:
                                   "依赖于一个二方库群时，必须定义一个统一的版本变量，避免版本号不一致",
                                   Severity.INFO, line=i)
                         break
+
+        # 6.0.x Check pom.xml for version format
+        if file_path.endswith("pom.xml"):
+            for i, line in enumerate(lines, 1):
+                if re.search(r"<version>", line) and \
+                   not re.search(r"SNAPSHOT", line, re.IGNORECASE) and \
+                   not re.search(r"<!--|-->", line):
+                    m = re.search(r"<version>([^<]+)</version>", line)
+                    if m:
+                        ver = m.group(1)
+                        if not re.search(r"^\d+\.\d+\.\d+", ver) and \
+                           not re.search(r"^\$\{", ver):
+                            self._add(file_path, "ALIBABA_VERSION_FORMAT",
+                                      f"版本号 '{ver}' 不符合主版本号.次版本号.修订号格式",
+                                      Severity.INFO, line=i)
 
         # 6.1.1 Layer naming: Controller/Service/DAO/Manager naming
         for path, node in tree:
