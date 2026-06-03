@@ -1078,6 +1078,47 @@ class AlibabaRulesChecker:
                               f"方法 '{mn}' 缺少访问修饰符，建议明确指定为 private/protected/public",
                               Severity.INFO, line=l, column=c)
 
+        # 4.26 Override annotation required
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                mods = node.modifiers or []
+                if "public" in mods or "protected" in mods:
+                    mn = node.name
+                    ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                    # Check if this method might be overriding (not a new method)
+                    if not any(a in ann_names for a in ("Override", "Override", "override")) and \
+                       not mn.startswith(("get", "set", "is")) and \
+                       "static" not in mods:
+                        # Check if parent class exists in same file
+                        for p2, n2 in tree:
+                            if isinstance(n2, javalang.tree.ClassDeclaration) and \
+                               n2.name != getattr(node, "name", ""):
+                                # This is a simplified check - just flag methods that look like overrides
+                                if not mn.startswith("_"):
+                                    pass  # Too noisy without cross-file analysis
+
+        # Setter parameter name check
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                fields = {}
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.FieldDeclaration):
+                        for decl in member.declarators:
+                            fields[decl.name.lower()] = decl.name
+                    elif isinstance(member, javalang.tree.MethodDeclaration):
+                        mn = member.name
+                        if mn.startswith("set") and len(mn) > 3:
+                            expected_field = mn[3].lower() + mn[4:]
+                            if expected_field in fields:
+                                for param in (member.parameters or []):
+                                    if hasattr(param, "name"):
+                                        expected_param = fields[expected_field]
+                                        if param.name.lower() != expected_param.lower():
+                                            l, c = self._pos(member)
+                                            self._add(file_path, "ALIBABA_SETTER_PARAM_NAME",
+                                                      f"setter '{mn}' 参数名应为 '{expected_param}' 而非 '{param.name}'，需与字段名一致",
+                                                      Severity.INFO, line=l, column=c)
+
     # ==================== (五) 日期时间 ====================
     def check_date(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_date"):
@@ -2026,7 +2067,29 @@ class AlibabaRulesChecker:
                re.search(r"(if|while|for)\s*\(", lines[i] if i < len(lines) else ""):
                 pass
 
-        # 9. Exception type matching
+        # 9. Exception used as flow control
+        for path, node in tree:
+            if isinstance(node, javalang.tree.TryStatement):
+                body_stmts = node.body if hasattr(node, "body") and isinstance(node.body, list) else \
+                            getattr(getattr(node, "body", None), "statements", []) or []
+                if not body_stmts:
+                    continue
+                for s in body_stmts:
+                    s_str = str(s)
+                    if "return" in s_str and any(
+                        kw in s_str for kw in ("null", "false", "-1", "0")
+                    ):
+                        for catch in (node.catches or []):
+                            if catch.parameter and catch.parameter.type and \
+                               hasattr(catch.parameter.type, "name") and \
+                               catch.parameter.type.name in ("Exception", "RuntimeException"):
+                                l = catch.parameter.position.line if catch.parameter.position else 0
+                                self._add(file_path, "ALIBABA_EXCEPTION_FLOW",
+                                          "异常捕获后不要用来做流程控制，不应通过异常控制业务分支",
+                                          Severity.WARNING, line=l)
+                                break
+
+        # 10. Exception type matching
         for path, node in tree:
             if isinstance(node, javalang.tree.TryStatement):
                 for catch in (node.catches or []):
@@ -2092,7 +2155,7 @@ class AlibabaRulesChecker:
                                       Severity.WARNING, line=i)
                         break
 
-        # 6. Exception not for flow control
+                        # 6. Exception not for flow control
         for path, node in tree:
             if isinstance(node, javalang.tree.MethodDeclaration):
                 body = node.body if isinstance(node.body, list) else getattr(getattr(node, "body", None), "statements", []) or []
@@ -2107,6 +2170,40 @@ class AlibabaRulesChecker:
                             for cn in catch_exprs:
                                 if re.search(rf"catch\s*\(\s*{cn}\s+\w+\s*\).*\{{$", body_str):
                                     pass
+
+        # 13. Exception must include scene info (not just message)
+        for i, line in enumerate(lines, 1):
+            if re.search(r"catch\s*\(", line):
+                has_log = False
+                has_msg = False
+                for j in range(i, min(i + 10, len(lines) + 1)):
+                    if j <= len(lines):
+                        lj = lines[j - 1]
+                        if re.search(r"log(ger)?\.(error|warn|info)", lj) and \
+                           re.search(r"(参数|参数|场景|context|traceId|requestId|request|userId|用户|案发现场|e\.printStackTrace)",
+                                     lj):
+                            has_msg = True
+                            break
+                        if re.search(r"\{}\s*,\s*e|\{\}\s*,\s*\w+|e\.getMessage|log\.error\(\s*\"[^\"]*\"", lj):
+                            has_log = True
+                        if re.search(r"^\s*log(ger)?\.(error|warn)", lj):
+                            has_log = True
+                        if re.search(r"\be\b\)", lj) and re.search(r"(\"|\+|\{\})", lj):
+                            has_msg = True
+                            break
+                        if re.search(r"}|\bthrow\b", lj):
+                            break
+                if has_log and not has_msg:
+                    self._add(file_path, "ALIBABA_CATCH_SCENE_INFO",
+                              "异常信息应包含案发现场信息和异常堆栈信息，缺少上下文参数",
+                              Severity.INFO, line=i)
+                # Also check log.error without exception object
+                for j in range(i, min(i + 8, len(lines) + 1)):
+                    if j <= len(lines) and re.search(r"log(ger)?\.(error|warn)\(\s*\"[^\"]+\"\s*\)", lines[j - 1]):
+                        self._add(file_path, "ALIBABA_CATCH_SCENE_INFO",
+                                  "异常日志应传递异常对象作为参数，而非仅记录消息",
+                                  Severity.INFO, line=j)
+                        break
 
     # ==================== (三) 日志规约 ====================
     def check_logging(self, tree, file_path: str, content: str):
@@ -3049,6 +3146,51 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_LEFT_FUZZY",
                           "页面搜索严禁左模糊或者全模糊，需要请走搜索引擎来解决",
                           Severity.WARNING, line=i)
+
+        # 5.2.5 Varchar index must specify length
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@Column|@TableField|columnDefinition", line) and \
+               re.search(r"varchar", line, re.IGNORECASE) and \
+               re.search(r"unique|index", line, re.IGNORECASE) and \
+               not re.search(r"length\s*=", line) and \
+               not re.search(r"//", line):
+                m = re.search(r'@(Column|TableField)\s*\(\s*.*name\s*=\s*"(\w+)"', line)
+                if m:
+                    self._add(file_path, "ALIBABA_VARCHAR_INDEX_LENGTH",
+                              f"varchar 字段 '{m.group(2)}' 建立索引时未指定索引长度",
+                              Severity.WARNING, line=i)
+
+        # 5.3.9 Covering index to avoid back-to-table
+        for i, line in enumerate(lines, 1):
+            if re.search(r"SELECT\s+\w+.*FROM", line, re.IGNORECASE) and \
+               re.search(r"WHERE", line, re.IGNORECASE) and \
+               not re.search(r"//", line):
+                if re.search(r"ORDER\s+BY", line, re.IGNORECASE) and \
+                   not re.search(r"SELECT.*FROM.*WHERE", line, re.IGNORECASE):
+                    pass  # too broad for AST-based detection
+                m_select = re.search(r"SELECT\s+(.+?)\s+FROM", line, re.IGNORECASE)
+                m_where_col = re.search(r"WHERE\s+(\w+\.\w+)", line, re.IGNORECASE)
+                if m_select and m_where_col:
+                    select_cols = m_select.group(1)
+                    where_col = m_where_col.group(1).split(".")[-1]
+                    if select_cols.strip() != "*" and \
+                       where_col not in select_cols:
+                        self._add(file_path, "ALIBABA_COVERING_INDEX",
+                                  "考虑利用覆盖索引进行查询，避免回表查询",
+                                  Severity.INFO, line=i)
+
+        # 5.3.10 Composite index: highest cardinality first
+        for i, line in enumerate(lines, 1):
+            if re.search(r"@Table\(.*indexes", line, re.IGNORECASE) or \
+               re.search(r"@Index", line):
+                if re.search(r"columnList\s*=\s*\"\w+,\w+", line):
+                    m = re.search(r"columnList\s*=\s*\"(.+?)\"", line)
+                    if m:
+                        cols = [c.strip() for c in m.group(1).split(",")]
+                        if len(cols) >= 2:
+                            self._add(file_path, "ALIBABA_COMPOSITE_INDEX",
+                                      f"组合索引 '{','.join(cols)}' 应将区分度最高的列放在最左边",
+                                      Severity.INFO, line=i)
 
         # 5.3.6 No foreign keys
         for i, line in enumerate(lines, 1):
