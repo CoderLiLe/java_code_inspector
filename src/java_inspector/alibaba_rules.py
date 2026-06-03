@@ -481,9 +481,21 @@ class AlibabaRulesChecker:
                           "禁止使用 Tab 字符缩进，请使用 4 个空格",
                           Severity.WARNING, line=i)
             if re.search(r"catch\s*\([^)]+\)\s*\{\s*\}", line):
-                self._add(file_path, "ALIBABA_EMPTY_CATCH_BRACE",
-                          "大括号内为空时应简洁地写成 {}",
+                    self._add(file_path, "ALIBABA_EMPTY_CATCH_BRACE",
+                              "大括号内为空时应简洁地写成 {}",
+                              Severity.INFO, line=i)
+            # 3.1 Brace format: left brace at end of line, right brace on new line
+            m = re.search(r"^\s*\}\s*(\S)", line)
+            if m and m.group(1) not in ("e", "c", "f", ")"):  # else, catch, finally, )
+                self._add(file_path, "ALIBABA_BRACE_FORMAT",
+                          "右大括号后除了 else/catch/finally 外必须换行",
                           Severity.INFO, line=i)
+            m = re.search(r"^\s*\{", line)
+            if m and i > 1 and not re.search(r"^\s*//", lines[i-2]) if i >= 2 else False:
+                prev_line = lines[i-2].strip()
+                if prev_line and not prev_line.endswith(("{", "(", ")", ";")) and \
+                   not prev_line.startswith("//") and not prev_line.startswith("/*"):
+                    pass  # too noisy for left brace on own line
 
         # 3.10 UTF-8 / Unix line endings
         if "\r\n" in content:
@@ -632,8 +644,46 @@ class AlibabaRulesChecker:
                                             l, c = self._pos(node)
                                             self._add(file_path, "ALIBABA_STATIC_ACCESS",
                                                       f"应通过类名直接访问静态方法 '{node.member}'，而非通过实例对象",
-                                                      Severity.WARNING, line=l, column=c)
-                                            break
+                                  Severity.WARNING, line=l, column=c)
+
+        # 1.5.4 Local variables lowerCamelCase
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                local_vars = []
+                for stmt in (node.body if isinstance(node.body, list) else
+                            getattr(getattr(node, "body", None), "statements", []) or []):
+                    for sub in (getattr(stmt, "statements", []) if hasattr(stmt, "statements") else []):
+                        local_vars.append(sub)
+                local_vars.extend(node.body if isinstance(node.body, list) else [])
+                for n in local_vars:
+                    if isinstance(n, javalang.tree.LocalVariableDeclaration):
+                        for declarator in n.declarators:
+                            vn = declarator.name
+                            if vn and vn[0].isupper() and vn != vn.upper() and len(vn) > 1 and \
+                               not any(vn.endswith(s) for s in ("VO", "PO", "DO", "DTO", "BO", "AO", "UID")):
+                                l, c = self._pos(declarator)
+                                self._add(file_path, "ALIBABA_LOCAL_VAR_CASE",
+                                          f"局部变量 '{vn}' 应使用 lowerCamelCase 风格（首字母小写）",
+                                          Severity.WARNING, line=l, column=c)
+
+        # 1.5.5 Method parameter vs field name collision (non-setter)
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                field_names = set()
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.FieldDeclaration):
+                        for decl in member.declarators:
+                            field_names.add(decl.name.lower())
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.MethodDeclaration):
+                        mn = member.name
+                        if not mn.startswith("set"):
+                            for param in (member.parameters or []):
+                                if param.name.lower() in field_names:
+                                    l, c = self._pos(param)
+                                    self._add(file_path, "ALIBABA_PARAM_FIELD_CONFLICT",
+                                              f"参数 '{param.name}' 与成员变量同名，非 setter 方法应避免",
+                                              Severity.INFO, line=l, column=c)
 
         for path, node in tree:
             if isinstance(node, javalang.tree.MethodReference) or \
@@ -645,6 +695,27 @@ class AlibabaRulesChecker:
                         l, c = self._pos(node) if hasattr(node, "position") else (0, 0)
                         self._add(file_path, "ALIBABA_DEPRECATED_METHOD",
                                   f"避免使用过时的方法 '{node.member}'",
+                                  Severity.WARNING, line=l, column=c)
+
+        # 4.4 Interface deprecation: @deprecated Javadoc must have @Deprecated annotation
+        for path, node in tree:
+            if isinstance(node, (javalang.tree.MethodDeclaration, javalang.tree.ClassDeclaration,
+                                 javalang.tree.InterfaceDeclaration)):
+                ml = node.position.line if node.position else 0
+                has_deprecated_javadoc = False
+                has_deprecated_annotation = False
+                for jj in range(max(0, ml - 8), ml - 1):
+                    if jj < len(lines) and re.search(r"@deprecated", lines[jj]):
+                        has_deprecated_javadoc = True
+                    if jj < len(lines) and re.search(r"@Deprecated", lines[jj]):
+                        has_deprecated_annotation = True
+                if has_deprecated_javadoc and not has_deprecated_annotation:
+                    ann_names = [getattr(a, "name", "") for a in (node.annotations or [])]
+                    if "Deprecated" not in ann_names:
+                        l, c = self._pos(node)
+                        name = getattr(node, "name", "element")
+                        self._add(file_path, "ALIBABA_INTERFACE_DEPRECATED",
+                                  f"'{name}' 在 Javadoc 中已标注 @deprecated 但缺少 @Deprecated 注解",
                                   Severity.WARNING, line=l, column=c)
 
         for path, node in tree:
@@ -1541,6 +1612,35 @@ class AlibabaRulesChecker:
                                       "switch 的每个 case 必须通过 break/return 等来终止",
                                       Severity.WARNING, line=cl)
 
+        # 8.1 Switch fall-through must have comment
+        for path, node in tree:
+            if isinstance(node, javalang.tree.SwitchStatement):
+                for case in node.cases:
+                    if case.case is not None:
+                        stmts = case.statements or []
+                        if stmts and not any(
+                            isinstance(s, (javalang.tree.BreakStatement,
+                                           javalang.tree.ReturnStatement,
+                                           javalang.tree.ContinueStatement,
+                                           javalang.tree.ThrowStatement))
+                            for s in stmts
+                        ):
+                            last_stmt_line = 0
+                            for s in stmts:
+                                if hasattr(s, "position") and s.position:
+                                    last_stmt_line = s.position.line
+                            # Check if next case line has a comment
+                            has_comment = False
+                            for j in range(last_stmt_line, min(last_stmt_line + 3, len(lines) + 1)):
+                                if j <= len(lines) and re.search(r"//|/\*|\*", lines[j - 1]):
+                                    has_comment = True
+                                    break
+                            if not has_comment:
+                                cl = case.case.position.line if hasattr(case.case, "position") and case.case.position else 0
+                                self._add(file_path, "ALIBABA_SWITCH_FALLTHROUGH",
+                                          "case 穿透必须注释说明为什么会继续执行到下一个 case",
+                                          Severity.INFO, line=cl)
+
         for i, line in enumerate(lines, 1):
             if re.search(r"\b(if|else\s+if|for|while|do)\s*\([^)]*\)\s*[^\s{;]", line) and \
                not re.search(r"\{\s*$", line):
@@ -1642,6 +1742,16 @@ class AlibabaRulesChecker:
                     l = node.position.line if node.position else 0
                     self._add(file_path, "ALIBABA_LOOP_OBJECT_CREATION",
                               "循环体中的对象定义应尽量移至循环体外处理，提升性能",
+                              Severity.INFO, line=l)
+
+        # 8.10.2 Database connection in loop
+        for path, node in tree:
+            if isinstance(node, (javalang.tree.ForStatement, javalang.tree.WhileStatement, javalang.tree.ForEachStatement)):
+                body_str = str(node.body or "")
+                if re.search(r"(getConnection|DataSource|createConnection|DriverManager|dataSource)", body_str, re.IGNORECASE):
+                    l = node.position.line if node.position else 0
+                    self._add(file_path, "ALIBABA_LOOP_CONNECTION",
+                              "数据库连接获取不应放在循环体内，应移至循环外",
                               Severity.INFO, line=l)
 
         # 8.6 Blank line after return/throw (when method > 10 lines)
@@ -1968,6 +2078,27 @@ class AlibabaRulesChecker:
                     self._add(file_path, "ALIBABA_INLINE_COMMENT",
                               "方法内部单行注释应放在被注释语句上方另起一行，而非代码行尾",
                               Severity.INFO, line=i)
+
+        # 9.4b Multi-line comments must use /* */ not consecutive //
+        for path, node in tree:
+            if isinstance(node, javalang.tree.MethodDeclaration):
+                ml = node.position.line if node.position else 0
+                method_end = ml
+                body = node.body if isinstance(node.body, list) else getattr(getattr(node, "body", None), "statements", []) or []
+                if body and hasattr(body[-1], "position") and body[-1].position:
+                    method_end = body[-1].position.line + 1
+                for j in range(ml, min(method_end, len(lines))):
+                    if j + 2 <= len(lines) and \
+                       re.search(r"^\s*//", lines[j - 1]) and \
+                       re.search(r"^\s*//", lines[j]) and \
+                       re.search(r"^\s*//", lines[j + 1]) and \
+                       not re.search(r"TODO|FIXME|http", lines[j - 1], re.IGNORECASE) and \
+                       not re.search(r"TODO|FIXME|http", lines[j], re.IGNORECASE) and \
+                       not re.search(r"TODO|FIXME|http", lines[j + 1], re.IGNORECASE):
+                        self._add(file_path, "ALIBABA_MULTILINE_COMMENT",
+                                  "方法内超过 3 行连续 // 注释应改用 /* */ 多行注释格式",
+                                  Severity.INFO, line=j)
+                        break
 
         # 9.3 Class must have @author and @date in Javadoc
         for path, node in tree:
@@ -3033,12 +3164,16 @@ class AlibabaRulesChecker:
 
         # 5.3.10 Alias with 'as'
         for i, line in enumerate(lines, 1):
-            if re.search(r"FROM\s+(\w+)\s+(\w{1,4})\s", line) and \
+            if re.search(r"(FROM|JOIN)\s+(\w+)\s+(\w{2,4})\s", line, re.IGNORECASE) and \
                not re.search(r"\s+as\s+", line, re.IGNORECASE) and \
-               not re.search(r"//", line):
-                m = re.search(r"FROM\s+(\w+)\s+(\w{1,4})\s", line, re.IGNORECASE)
-                if m and m.group(1).lower() != m.group(2).lower():
-                    pass
+               not re.search(r"//", line) and \
+               not re.search(r"\(\s*SELECT", line, re.IGNORECASE):
+                m = re.search(r"(?:FROM|JOIN)\s+(\w+)\s+(\w{2,4})\s", line, re.IGNORECASE)
+                if m and m.group(1).lower() != m.group(2).lower() and \
+                   not re.search(r"^\d", m.group(2)):
+                    self._add(file_path, "ALIBABA_ALIAS_AS",
+                              f"SQL 语句中表别名前推荐加 as，如 '{m.group(1)} as {m.group(2)}'",
+                              Severity.INFO, line=i)
 
         # 5.3.11 IN control within 1000
         for i, line in enumerate(lines, 1):
