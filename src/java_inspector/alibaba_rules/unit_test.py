@@ -1,3 +1,4 @@
+"""单元测试 — 5 条规则：测试位置、断言、环境依赖"""
 import re
 from typing import List
 

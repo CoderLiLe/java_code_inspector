@@ -1,3 +1,4 @@
+"""BaseChecker — 所有检查器的基类，提供 _add、_pos 方法及通用正则模式"""
 import re
 from typing import List
 

@@ -1,3 +1,4 @@
+"""集合处理 — 22 条规则：toMap、subList、foreach、初始化容量"""
 import re
 import javalang
 

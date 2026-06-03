@@ -1,3 +1,4 @@
+"""AlibabaRulesChecker — 293 条规则的总入口，委派到 19 个模块检查器"""
 from typing import List
 
 from java_inspector.alibaba_rules.base import BaseChecker

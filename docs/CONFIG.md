@@ -58,29 +58,29 @@
 
 ## Alibaba Rule Config Keys
 
-Prefix `alibaba_` rules map to `AlibabaRulesChecker` check methods. Set `"enabled": false` to skip an entire category.
+Prefix `alibaba_` rules map to `AlibabaRulesChecker` check methods (defined in `alibaba_rules/` package, 19 modules). Set `"enabled": false` to skip an entire category.
 
-| Config Key | Check Method | Rules |
-|------------|-------------|-------|
-| `alibaba_naming` | `check_naming` | Class/method/field/constant naming conventions |
-| `alibaba_code_style` | `check_code_style` | Indentation, line length, spacing |
-| `alibaba_oop` | `check_oop` | POJO, equals/hashCode, BigDecimal, money types |
-| `alibaba_date` | `check_date` | Date format, JDK8 time, calendar usage |
-| `alibaba_collection` | `check_collection` | toMap, subList, foreach, init capacity |
-| `alibaba_control` | `check_control` | switch, if-else depth, braces |
-| `alibaba_concurrency` | `check_concurrency` | Thread pool, ThreadLocal, locks |
-| `alibaba_comment` | `check_comment` | TODO/FIXME, inline comments, Javadoc |
-| `alibaba_constant` | `check_constant` | Long suffix, float suffix, magic values |
-| `alibaba_exception` | `check_exception` | Catch handling, finally, NPE |
-| `alibaba_logging` | `check_logging` | SLF4J facade, log level checks, System.out |
-| `alibaba_other` | `check_other` | Pattern compile, BeanUtils, SQL injection |
-| `alibaba_method_length` | `check_method_length` | Method line count (default 80) |
-| `alibaba_frontend_backend` | `check_frontend_backend` | API JSON, pagination, versioning, templates |
-| `alibaba_security` | `check_security` | XSS, CSRF, SQL injection, file upload, password |
-| `alibaba_sql` | `check_sql` | MySQL table design, index, query optimization |
-| `alibaba_unit_test` | `check_unit_test` | Test location, assert usage, env dependency |
-| `alibaba_design` | `check_design` | Single responsibility, composition, inheritance |
-| `alibaba_engineering` | `check_engineering` | Layer exceptions, package naming, remote timeout |
+| Config Key | Source Module | Rules |
+|---|---|---|
+| `alibaba_naming` | `alibaba_rules/naming.py` | Class/method/field/constant naming conventions |
+| `alibaba_code_style` | `alibaba_rules/code_style.py` | Indentation, line length, spacing |
+| `alibaba_oop` | `alibaba_rules/oop.py` | POJO, equals/hashCode, BigDecimal, money types |
+| `alibaba_date` | `alibaba_rules/date.py` | Date format, JDK8 time, calendar usage |
+| `alibaba_collection` | `alibaba_rules/collection.py` | toMap, subList, foreach, init capacity |
+| `alibaba_control` | `alibaba_rules/control.py` | switch, if-else depth, braces |
+| `alibaba_concurrency` | `alibaba_rules/concurrency.py` | Thread pool, ThreadLocal, locks |
+| `alibaba_comment` | `alibaba_rules/comment.py` | TODO/FIXME, inline comments, Javadoc |
+| `alibaba_constant` | `alibaba_rules/constant.py` | Long suffix, float suffix, magic values |
+| `alibaba_exception` | `alibaba_rules/exception.py` | Catch handling, finally, NPE |
+| `alibaba_logging` | `alibaba_rules/logging.py` | SLF4J facade, log level checks, System.out |
+| `alibaba_other` | `alibaba_rules/other.py` | Pattern compile, BeanUtils, SQL injection |
+| `alibaba_method_length` | `alibaba_rules/method_length.py` | Method line count (default 80) |
+| `alibaba_frontend_backend` | `alibaba_rules/frontend_backend.py` | API JSON, pagination, versioning, templates |
+| `alibaba_security` | `alibaba_rules/security.py` | XSS, CSRF, SQL injection, file upload, password |
+| `alibaba_sql` | `alibaba_rules/sql.py` | MySQL table design, index, query optimization |
+| `alibaba_unit_test` | `alibaba_rules/unit_test.py` | Test location, assert usage, env dependency |
+| `alibaba_design` | `alibaba_rules/design.py` | Single responsibility, composition, inheritance |
+| `alibaba_engineering` | `alibaba_rules/engineering.py` | Layer exceptions, package naming, remote timeout |
 
 ## CLI Options
 

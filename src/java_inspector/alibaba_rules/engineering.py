@@ -1,3 +1,4 @@
+"""工程结构 — 18 条规则：分包、异常码、POM 版本"""
 import re
 from typing import List
 

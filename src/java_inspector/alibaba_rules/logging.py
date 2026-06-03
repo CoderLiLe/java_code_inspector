@@ -1,3 +1,4 @@
+"""日志规约 — 6 条规则：SLF4J 门面、日志级别、占位符"""
 import re
 import javalang
 

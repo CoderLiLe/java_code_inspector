@@ -2,7 +2,7 @@
 
 共 **293** 条规则，覆盖《Java开发手册(黄山版)》全部 19 个章节。
 
-## 命名风格 (29 条)
+## 命名风格 (27 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
@@ -13,7 +13,6 @@
 | `ALIBABA_NO_RACIST` | 避免使用种族歧视性词语，建议使用 blockList/allowList/secondary | 🟡 WARNING |
 | `ALIBABA_ARRAY_STYLE` | 类型与中括号应紧挨相连来定义数组，如 int[] arrayDemo | 🟡 WARNING |
 | `ALIBABA_PACKAGE_NAME` | 包名必须全部小写 | 🟡 WARNING |
-| `ALIBABA_PARAM_FIELD_CONFLICT` | 参数与成员变量同名，非 setter 方法应避免 | 🔵 INFO |
 | `ALIBABA_UPPER_CAMEL` | 类名应使用 UpperCamelCase 风格（首字母大写） | 🟡 WARNING |
 | `ALIBABA_LOWER_CAMEL_METHOD` | 方法名应使用 lowerCamelCase 风格（首字母小写） | 🟡 WARNING |
 | `ALIBABA_LOWER_CAMEL_PARAM` | 参数名应使用 lowerCamelCase 风格（首字母小写） | 🟡 WARNING |
@@ -34,7 +33,6 @@
 | `ALIBABA_PATTERN_NAME` | 包含设计模式名的类，建议将模式名放在类名末尾 | 🔵 INFO |
 | `ALIBABA_TYPE_NOUN_SUFFIX` | 变量中类型名词建议放在变量名末尾以提升辨识度 | 🔵 INFO |
 | `ALIBABA_LAYER_METHOD` | DAO/Service 方法命名应使用规范前缀（get/list/count/remove） | 🔵 INFO |
-| `ALIBABA_LOCAL_VAR_CASE` | 局部变量应使用 lowerCamelCase 风格（首字母小写） | 🟡 WARNING |
 
 ## 代码风格 (14 条)
 
@@ -55,7 +53,7 @@
 | `ALIBABA_KEYWORD_SPACING` | 关键字与括号之间必须加空格 | 🔵 INFO |
 | `ALIBABA_OPERATOR_SPACING` | 二目运算符左右两边都需要加一个空格 | 🔵 INFO |
 
-## 面向对象 (39 条)
+## 面向对象 (41 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
@@ -98,6 +96,8 @@
 | `ALIBABA_ACCESS_CTOR` | 类包含大量静态方法时构造方法应设为 private | 🔵 INFO |
 | `ALIBABA_METHOD_ORDER` | 方法顺序不合理，建议按 public/protected/private/getter/setter 排列 | 🔵 INFO |
 | `ALIBABA_DO_FIELD_TYPE_MISMATCH` | DO 字段类型应与数据库字段类型匹配（如 bigint 对应 Long） | 🟡 WARNING |
+| `ALIBABA_LOCAL_VAR_CASE` | 局部变量应使用 lowerCamelCase 风格（首字母小写） | 🟡 WARNING |
+| `ALIBABA_PARAM_FIELD_CONFLICT` | 参数与成员变量同名，非 setter 方法应避免 | 🔵 INFO |
 
 ## 日期时间 (11 条)
 
@@ -187,7 +187,7 @@
 | `ALIBABA_SINGLETON_THREAD_SAFE` | 单例对象需保证线程安全 | 🟡 WARNING |
 | `ALIBABA_HASHMAP_RESIZE` | 高并发避免 HashMap resize 死链 | 🔵 INFO |
 
-## 注释规范 (8 条)
+## 注释规范 (11 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
@@ -199,6 +199,9 @@
 | `ALIBABA_TODO` | 存在 TODO 标记 | 🔵 INFO |
 | `ALIBABA_COMMENTED_CODE` | 删除被注释的代码 | 🔵 INFO |
 | `ALIBABA_ENUM_COMMENT` | 枚举项缺少注释说明 | 🔵 INFO |
+| `ALIBABA_JAVADOC_AUTHOR` | 类缺少 @author 标记 | 🔵 INFO |
+| `ALIBABA_JAVADOC_DATE` | 类缺少创建日期标记 | 🔵 INFO |
+| `ALIBABA_UNUSED_PRIVATE_FIELD` | 未使用的私有字段应移除 | 🟡 WARNING |
 
 ## 常量定义 (5 条)
 
@@ -253,6 +256,12 @@
 | `ALIBABA_SQL_INJECTION` | 禁止字符串拼接 SQL | 🟡 WARNING |
 | `ALIBABA_MAGIC_STRING` | 不允许魔法值（未经预先定义的常量）直接出现在代码中 | 🔵 INFO |
 | `ALIBABA_STRING_BUILDER_SIZE` | StringBuilder/StringBuffer 建议指定初始大小，避免频繁扩容 | 🔵 INFO |
+
+## 方法长度 (1 条)
+
+| 规则 ID | 说明 | 严重度 |
+|---------|------|--------|
+| `ALIBABA_METHOD_LENGTH` | 方法总行数超过建议值，应进行拆分 | 🟡 WARNING |
 
 ## 前后端规约 (17 条)
 
@@ -349,7 +358,7 @@
 | `ALIBABA_TEST_HARDCODED_ID` | 不硬编码数据库 ID | 🟡 WARNING |
 | `ALIBABA_TEST_ROLLBACK` | DB 测试设定自动回滚 | 🔵 INFO |
 
-## 工程结构 (22 条)
+## 工程结构 (18 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
@@ -362,19 +371,15 @@
 | `ALIBABA_ERROR_CODE_CLASS` | 错误码按类编号 | 🔵 INFO |
 | `ALIBABA_INTERFACE_MAP_RESULT` | 接口不返回 Map | 🟡 WARNING |
 | `ALIBABA_INTERFACE_MAP_PARAM` | 接口不接受 Map 参数 | 🟡 WARNING |
-| `ALIBABA_METHOD_TOO_LONG` | 方法不超过 80 行 | 🟡 WARNING |
-| `ALIBABA_METHOD_LENGTH` | 方法总行数超过建议值，应进行拆分 | 🟡 WARNING |
 | `ALIBABA_POJO_TOSTRING` | POJO 重写 toString | 🔵 INFO |
 | `ALIBABA_SPRING_ANNOTATION` | Impl 类添加 Spring Bean 注解 | 🔵 INFO |
-| `ALIBABA_JAVADOC_AUTHOR` | 类缺少 @author 标记 | 🔵 INFO |
-| `ALIBABA_JAVADOC_DATE` | 类缺少创建日期标记 | 🔵 INFO |
-| `ALIBABA_UNUSED_PRIVATE_FIELD` | 未使用的私有字段应移除 | 🟡 WARNING |
 | `ALIBABA_IMPL_SUFFIX` | Service 实现类应以 Impl 结尾 | 🔵 INFO |
 | `ALIBABA_QUERY_PARAM_MAP` | 查询方法超过 2 个参数时禁止使用 Map 传输，应使用 DTO | 🟡 WARNING |
 | `ALIBABA_SNAPSHOT_DEP` | 线上应用不要依赖 SNAPSHOT 版本（安全包除外） | 🟡 WARNING |
 | `ALIBABA_POM_UNIFIED_VERSION` | 依赖于一个二方库群时，必须定义一个统一的版本变量 | 🔵 INFO |
 | `ALIBABA_POM_DEP_VERSION` | 依赖版本应通过 <dependencyManagement> 统一管理版本变量 | 🔵 INFO |
 | `ALIBABA_VERSION_FORMAT` | 版本号不符合主版本号.次版本号.修订号格式 | 🔵 INFO |
+| `ALIBABA_METHOD_TOO_LONG` | 方法不超过 80 行 | 🟡 WARNING |
 
 ## 设计规约 (6 条)
 

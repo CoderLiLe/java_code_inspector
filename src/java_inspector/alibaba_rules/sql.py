@@ -1,3 +1,4 @@
+"""MySQL 数据库 — 40 条规则：表设计、索引、查询优化"""
 import re
 from typing import List
 

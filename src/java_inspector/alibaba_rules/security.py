@@ -1,3 +1,4 @@
+"""安全规约 — 13 条规则：XSS、CSRF、SQL 注入、文件上传"""
 import re
 from typing import List
 

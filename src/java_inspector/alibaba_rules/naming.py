@@ -1,3 +1,4 @@
+"""命名风格 — 27 条规则：类/方法/字段/常量命名规范"""
 import re
 import javalang
 

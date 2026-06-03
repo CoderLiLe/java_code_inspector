@@ -1,3 +1,4 @@
+"""注释规范 — 11 条规则：Javadoc、TODO/FIXME、注释代码"""
 import re
 import javalang
 

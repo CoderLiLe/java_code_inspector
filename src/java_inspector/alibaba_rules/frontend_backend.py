@@ -1,3 +1,4 @@
+"""前后端规约 — 17 条规则：API JSON、分页、版本、安全"""
 import re
 import javalang
 

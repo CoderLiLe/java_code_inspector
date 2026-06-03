@@ -1,3 +1,4 @@
+"""方法长度 — 1 条规则：方法行数不超过 80 行"""
 import javalang
 
 from java_inspector.models import Severity

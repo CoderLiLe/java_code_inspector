@@ -1,3 +1,4 @@
+"""代码风格 — 14 条规则：缩进、行长、空格"""
 import re
 
 from java_inspector.models import Severity

@@ -1,3 +1,4 @@
+"""异常处理 — 15 条规则：空 catch、finally、NPE、事务回滚"""
 import re
 import javalang
 

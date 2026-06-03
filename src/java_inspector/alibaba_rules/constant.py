@@ -1,3 +1,4 @@
+"""常量定义 — 5 条规则：Long 后缀、浮点后缀、魔法值"""
 import re
 import javalang
 

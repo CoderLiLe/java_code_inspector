@@ -1,3 +1,4 @@
+"""设计规约 — 6 条规则：单一职责、组合优于继承"""
 import re
 from typing import List
 

@@ -1,3 +1,4 @@
+"""面向对象 — 41 条规则：POJO、equals/hashCode、BigDecimal"""
 import re
 import javalang
 
