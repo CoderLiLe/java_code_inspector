@@ -1145,6 +1145,32 @@ class AlibabaRulesChecker:
                                                       f"setter '{mn}' 参数名应为 '{expected_param}' 而非 '{param.name}'，需与字段名一致",
                                                       Severity.INFO, line=l, column=c)
 
+        # 4.28 Method order: public/protected > private > getter/setter
+        for path, node in tree:
+            if isinstance(node, javalang.tree.ClassDeclaration):
+                methods = []
+                for member in (node.body or []):
+                    if isinstance(member, javalang.tree.MethodDeclaration):
+                        mods = member.modifiers or []
+                        if "public" in mods:
+                            tier = 0
+                        elif "protected" in mods:
+                            tier = 1
+                        elif "private" in mods and member.name.startswith(("get", "set", "is")):
+                            tier = 3
+                        elif "private" in mods:
+                            tier = 2
+                        else:
+                            tier = 0
+                        methods.append((tier, member))
+                for idx in range(1, len(methods)):
+                    if methods[idx][0] < methods[idx - 1][0]:
+                        l = methods[idx][1].position.line if methods[idx][1].position else 0
+                        self._add(file_path, "ALIBABA_METHOD_ORDER",
+                                  f"方法 '{methods[idx][1].name}' 顺序不合理，建议按 public/protected/private/getter/setter 排列",
+                                  Severity.INFO, line=l)
+                        break
+
     # ==================== (五) 日期时间 ====================
     def check_date(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("alibaba_date"):
