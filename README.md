@@ -41,6 +41,9 @@ java_code_inspector/
 │       ├── GoodExample.java
 │       └── TestExample.java
 ├── docs/                         # 文档目录
+│   ├── ALIBABA_RULES.md          # 阿里规约规则总表（168条）
+│   ├── ARCHITECTURE.md           # 架构说明
+│   └── CONFIG.md                 # 配置参考
 ├── java_inspector_config.json    # 默认配置文件
 ├── java-code-check.yaml          # GitHub Actions工作流
 ├── run_tests.py                  # 测试运行脚本
