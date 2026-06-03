@@ -1,3 +1,5 @@
+"""SonarQubeCheckerSeven — 第七批规则"""
+"""SonarQubeCheckerSeven — 第七批规则"""
 import re
 from typing import List
 

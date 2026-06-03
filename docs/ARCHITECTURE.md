@@ -21,12 +21,18 @@ cli.py                Argument parsing, orchestration
     │       │               ├── sql.py        (40 rules)
     │       │               └── ... 14 more
     │       │
-    │       ├──> sonarqube_rules.py     SonarQube checker base
-    │       └──> sonarqube_rules_*.py   16 extension checkers
-    │
-    ├──> reporter.py        InspectionReporter — text/json/xml/html/csv output
-    ├──> ci_cd.py           CICDIntegrator — quality gate enforcement
-    └──> hooks.py           Git pre-commit hook installer
+    │       ├──> sonarqube_rules.py         Re-exports all SonarQubeChecker classes
+    │       │       │
+    │       │       └──> sonarqube/         17 checkers, 1 package
+    │       │               ├── __init__.py       All 17 SonarQubeChecker re-exports
+    │       │               ├── sonarqube_rules.py          SonarQubeChecker (main)
+    │       │               ├── sonarqube_rules_ext.py      SonarQubeCheckerExt
+    │       │               ├── sonarqube_rules_full.py     SonarQubeCheckerFull
+    │       │               └── ... 14 more extension checkers
+    │       │
+    │       ├──> reporter.py        InspectionReporter — text/json/xml/html/csv output
+    │       ├──> ci_cd.py           CICDIntegrator — quality gate enforcement
+    │       └──> hooks.py           Git pre-commit hook installer
 ```
 
 ## Data Flow
@@ -44,6 +50,7 @@ cli.py                Argument parsing, orchestration
 | `InspectionConfig` | `config.py` | All configuration state |
 | `JavaCodeInspector` | `inspector.py` | Core inspection engine |
 | `AlibabaRulesChecker` | `alibaba_rules/__init__.py` | 293 Alibaba rules (19 categories, 21 files) |
+| `SonarQubeChecker` (×17) | `sonarqube/` | 17 SonarQube checker classes (Bugs / Code Smell / Security) |
 | `InspectionReporter` | `reporter.py` | Multi-format report generation |
 | `CICDIntegrator` | `ci_cd.py` | Quality gate enforcement |
 | `CodeIssue` (dataclass) | `models.py` | Single issue: file, line, id, severity, message |

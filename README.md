@@ -56,6 +56,26 @@ java_code_inspector/
 │           ├── unit_test.py      # 单元测试 (5 条)
 │           ├── engineering.py    # 工程结构 (18 条)
 │           └── design.py         # 设计规约 (6 条)
+│       ├── sonarqube_rules.py    # SonarQube 规则入口（委派到 sonarqube/ 包）
+│       └── sonarqube/            # SonarQube 规则检查器包（17个模块）
+│           ├── __init__.py       # 所有 SonarQubeChecker 类的导出
+│           ├── sonarqube_rules.py          # 主检查器 (Bugs / Code Smell / Security)
+│           ├── sonarqube_rules_ext.py      # 扩展检查器
+│           ├── sonarqube_rules_full.py     # 完整规则集
+│           ├── sonarqube_rules_fourth.py   # 第四批规则
+│           ├── sonarqube_rules_five.py     # 第五批规则
+│           ├── sonarqube_rules_six.py      # 第六批规则
+│           ├── sonarqube_rules_seven.py    # 第七批规则
+│           ├── sonarqube_rules_eight.py    # 第八批规则
+│           ├── sonarqube_rules_nine.py     # 第九批规则
+│           ├── sonarqube_rules_ten.py      # 第十批规则
+│           ├── sonarqube_rules_eleven.py   # 第十一批规则
+│           ├── sonarqube_rules_twelve.py   # 第十二批规则
+│           ├── sonarqube_rules_thirteen.py # 第十三批规则
+│           ├── sonarqube_rules_fourteen.py # 第十四批规则
+│           ├── sonarqube_rules_fifteen.py  # 第十五批规则
+│           ├── sonarqube_rules_sixteen.py  # 第十六批规则
+│           └── sonarqube_rules_seventeen.py# 第十七批规则
 ├── tests/
 │   ├── __init__.py
 │   ├── test_config.json

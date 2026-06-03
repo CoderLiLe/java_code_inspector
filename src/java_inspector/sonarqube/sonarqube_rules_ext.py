@@ -1,3 +1,5 @@
+"""SonarQubeCheckerExt — 扩展检查器"""
+"""SonarQubeCheckerExt — 扩展检查器"""
 import re
 from typing import List
 

@@ -1,3 +1,4 @@
+"""SonarQubeChecker — 主检查器：Bugs / Code Smell / Security"""
 import re
 from typing import List
 

@@ -1,3 +1,5 @@
+"""SonarQubeCheckerFull — 完整规则集"""
+"""SonarQubeCheckerFull — 完整规则集"""
 import re
 from typing import List
 
