@@ -2105,7 +2105,6 @@ class AlibabaRulesChecker:
                         if catch_exprs:
                             body_str = str(getattr(stmt, "body", "") or "")
                             for cn in catch_exprs:
-                                # Check if the catch body has a return that relates to the exception type
                                 if re.search(rf"catch\s*\(\s*{cn}\s+\w+\s*\).*\{{$", body_str):
                                     pass
 
@@ -2147,6 +2146,16 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_LOG_LEVEL_CHECK",
                           "trace/debug 级别日志输出必须进行级别开关判断",
                           Severity.INFO, line=i)
+
+        # Log file additivity check
+        if file_path.endswith((".xml",)):
+            for i, line in enumerate(lines, 1):
+                if re.search(r'<logger\s', line) and \
+                   not re.search(r'additivity\s*=\s*"false"', line) and \
+                   not re.search(r"<!--|-->", line):
+                    self._add(file_path, "ALIBABA_LOG_ADDITIVITY",
+                              "避免重复打印日志，务必在日志配置文件中设置 additivity=false",
+                              Severity.INFO, line=i)
 
             if re.search(r"System\.(out|err)\.(print|println|printf)", line):
                 self._add(file_path, "ALIBABA_SYSTEM_OUT",
@@ -2196,6 +2205,12 @@ class AlibabaRulesChecker:
             if re.search(r"Math\.random\(\)", line):
                 self._add(file_path, "ALIBABA_MATH_RANDOM",
                           "注意 Math.random() 返回 double 类型，取值范围 0≤x<1，建议使用 Random 或 ThreadLocalRandom",
+                          Severity.INFO, line=i)
+
+            if re.search(r"new\s+(StringBuilder|StringBuffer)\s*\(\s*\)", line) and \
+               not re.search(r"//", line):
+                self._add(file_path, "ALIBABA_STRING_BUILDER_SIZE",
+                          "StringBuilder/StringBuffer 建议指定初始大小，避免频繁扩容",
                           Severity.INFO, line=i)
 
             if re.search(r"\.executeQuery\s*\(\s*\"", line) or \
@@ -2656,6 +2671,29 @@ class AlibabaRulesChecker:
                                           Severity.WARNING, line=l, column=c)
 
         # 5.1.8 varchar length check
+        # 5.1.7 char type for fixed-length strings
+        for path, node in tree:
+            if isinstance(node, javalang.tree.FieldDeclaration):
+                ft = getattr(node, "type", None)
+                if ft and hasattr(ft, "name") and ft.name == "String":
+                    ann_str = str([str(getattr(a, "name", "")) + str(getattr(a, "element", ""))
+                                   for a in (node.annotations or [])])
+                    if "Column" in ann_str or "TableField" in ann_str:
+                        m = re.search(r'columnDefinition\s*=\s*"([^"]+)"', ann_str)
+                        if m:
+                            col_def = m.group(1).lower()
+                            if "varchar" in col_def:
+                                len_m = re.search(r'varchar\s*\(\s*(\d+)\s*\)', col_def)
+                                if len_m:
+                                    length = int(len_m.group(1))
+                                    # 5.1.7: use char for fixed-length strings
+                                    if length in (1, 2, 3, 4, 6, 8, 11, 16, 18, 32) and \
+                                       "char" not in col_def:
+                                        for decl in node.declarators:
+                                            l, c = self._pos(decl)
+                                            self._add(file_path, "ALIBABA_CHAR_TYPE",
+                                                      f"固定长度短字段 '{decl.name}'（长度 {length}）建议使用 char 定长字符串类型",
+                                                      Severity.INFO, line=l, column=c)
         for path, node in tree:
             if isinstance(node, javalang.tree.FieldDeclaration):
                 ft = getattr(node, "type", None)
@@ -2845,6 +2883,17 @@ class AlibabaRulesChecker:
                 self._add(file_path, "ALIBABA_PAGE_ORDER_BY",
                           "分页查询必须指定 ORDER BY 以保证结果稳定",
                           Severity.WARNING, line=i)
+
+        # 5.3.x utf8mb4 character set check
+        for i, line in enumerate(lines, 1):
+            if re.search(r"charset|characterSet|character_set", line, re.IGNORECASE) and \
+               re.search(r"utf8|utf-8", line, re.IGNORECASE) and \
+               not re.search(r"utf8mb4", line, re.IGNORECASE) and \
+               not re.search(r"//", line) and \
+               not re.search(r"<!--|-->", line):
+                self._add(file_path, "ALIBABA_UTF8MB4",
+                          "所有的字符存储与表示，均采用 utf8mb4 字符集（而非 utf8），避免 emoji 等字符无法存储",
+                          Severity.INFO, line=i)
 
         # 5.4.1 Try to avoid count on large tables without index
         for i, line in enumerate(lines, 1):
@@ -3181,6 +3230,26 @@ class AlibabaRulesChecker:
                            not re.search(r"^\$\{", ver):
                             self._add(file_path, "ALIBABA_VERSION_FORMAT",
                                       f"版本号 '{ver}' 不符合主版本号.次版本号.修订号格式",
+                                      Severity.INFO, line=i)
+
+        # 6.0.x POM: all deps in <dependencies>, versions in <dependencyManagement>
+        if file_path.endswith("pom.xml"):
+            in_dep_mgmt = False
+            for i, line in enumerate(lines, 1):
+                if re.search(r"<dependencyManagement>", line):
+                    in_dep_mgmt = True
+                elif re.search(r"</dependencyManagement>", line):
+                    in_dep_mgmt = False
+                if re.search(r"<version>[^$]", line) and \
+                   not re.search(r"<version>\$\{", line) and \
+                   not re.search(r"<!--|-->", line) and \
+                   not in_dep_mgmt:
+                    m = re.search(r"<version>([^<]+)</version>", line)
+                    if m and not re.search(r"^\$\{", m.group(1)):
+                        version_val = m.group(1)
+                        if re.search(r"^\d+\.\d+\.\d+", version_val):
+                            self._add(file_path, "ALIBABA_POM_DEP_VERSION",
+                                      f"依赖版本 '{version_val}' 应通过 <dependencyManagement> 统一管理版本变量",
                                       Severity.INFO, line=i)
 
         # 6.1.1 Layer naming: Controller/Service/DAO/Manager naming
