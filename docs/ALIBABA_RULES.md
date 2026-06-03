@@ -1,8 +1,8 @@
 # Alibaba Java Coding Guidelines — 规则总表
 
-共 **287** 条规则，覆盖《Java开发手册(黄山版)》全部 19 个章节。
+共 **295** 条规则，覆盖《Java开发手册(黄山版)》全部 19 个章节。
 
-## 命名风格 (27 条)
+## 命名风格 (29 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
@@ -13,6 +13,7 @@
 | `ALIBABA_NO_RACIST` | 避免使用种族歧视性词语，建议使用 blockList/allowList/secondary | 🟡 WARNING |
 | `ALIBABA_ARRAY_STYLE` | 类型与中括号应紧挨相连来定义数组，如 int[] arrayDemo | 🟡 WARNING |
 | `ALIBABA_PACKAGE_NAME` | 包名必须全部小写 | 🟡 WARNING |
+| `ALIBABA_PARAM_FIELD_CONFLICT` | 参数与成员变量同名，非 setter 方法应避免 | 🔵 INFO |
 | `ALIBABA_UPPER_CAMEL` | 类名应使用 UpperCamelCase 风格（首字母大写） | 🟡 WARNING |
 | `ALIBABA_LOWER_CAMEL_METHOD` | 方法名应使用 lowerCamelCase 风格（首字母小写） | 🟡 WARNING |
 | `ALIBABA_LOWER_CAMEL_PARAM` | 参数名应使用 lowerCamelCase 风格（首字母小写） | 🟡 WARNING |
@@ -33,11 +34,13 @@
 | `ALIBABA_PATTERN_NAME` | 包含设计模式名的类，建议将模式名放在类名末尾 | 🔵 INFO |
 | `ALIBABA_TYPE_NOUN_SUFFIX` | 变量中类型名词建议放在变量名末尾以提升辨识度 | 🔵 INFO |
 | `ALIBABA_LAYER_METHOD` | DAO/Service 方法命名应使用规范前缀（get/list/count/remove） | 🔵 INFO |
+| `ALIBABA_LOCAL_VAR_CASE` | 局部变量应使用 lowerCamelCase 风格（首字母小写） | 🟡 WARNING |
 
-## 代码风格 (13 条)
+## 代码风格 (14 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
+| `ALIBABA_BRACE_FORMAT` | 右大括号后除了 else/catch/finally 外必须换行 | 🔵 INFO |
 | `ALIBABA_NO_TAB` | 禁止使用 Tab 字符缩进，请使用 4 个空格 | 🟡 WARNING |
 | `ALIBABA_NO_TABS` | 代码换行缩进禁止使用 Tab，请使用空格代替 | 🔵 INFO |
 | `ALIBABA_LINE_LENGTH` | 单行字符数限制不超过 120 个，超出需要换行 | 🔵 INFO |
@@ -52,7 +55,7 @@
 | `ALIBABA_KEYWORD_SPACING` | 关键字与括号之间必须加空格 | 🔵 INFO |
 | `ALIBABA_OPERATOR_SPACING` | 二目运算符左右两边都需要加一个空格 | 🔵 INFO |
 
-## 面向对象 (38 条)
+## 面向对象 (39 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
@@ -77,6 +80,7 @@
 | `ALIBABA_RPC_WRAPPER_RETURN` | RPC 接口方法返回值应使用包装数据类型 | 🟡 WARNING |
 | `ALIBABA_RPC_WRAPPER_PARAM` | RPC 接口方法参数应使用包装数据类型 | 🟡 WARNING |
 | `ALIBABA_INTERFACE_ENUM_RETURN` | 接口方法返回值禁止使用枚举类型 | 🟡 WARNING |
+| `ALIBABA_INTERFACE_DEPRECATED` | 在 Javadoc 中已标注 @deprecated 但缺少 @Deprecated 注解 | 🟡 WARNING |
 | `ALIBABA_EQUALS_STYLE` | equals 应使用常量调用，建议 "constant".equals(var) | 🔵 INFO |
 | `ALIBABA_CLONE_USAGE` | 慎用 Object 的 clone 方法，默认浅拷贝 | 🔵 INFO |
 | `ALIBABA_CTOR_GROUPING` | 多个构造方法应顺序放置在一起 | 🔵 INFO |
@@ -138,18 +142,20 @@
 | `ALIBABA_COMPARATOR_CONDITIONS` | Comparator 需满足自反性/传递性/对称性 | 🟡 WARNING |
 | `ALIBABA_ENUM_FIXED_VALUE` | 固定范围值建议使用枚举类型定义 | 🔵 INFO |
 
-## 控制语句 (13 条)
+## 控制语句 (15 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
 | `ALIBABA_REQUIRE_BRACES` | if/else/for/while/do 必须使用大括号 | 🟡 WARNING |
 | `ALIBABA_SWITCH_DEFAULT` | switch 必须包含 default 语句 | 🟡 WARNING |
+| `ALIBABA_SWITCH_FALLTHROUGH` | case 穿透必须注释说明为什么会继续执行到下一个 case | 🔵 INFO |
 | `ALIBABA_SWITCH_BREAK` | 每个 case 必须用 break/return 终止 | 🟡 WARNING |
 | `ALIBABA_SWITCH_STRING` | String 类型 switch 需先 null 判断 | 🔵 INFO |
 | `ALIBABA_TERNARY_NPE` | 三目运算符注意自动拆箱 NPE | 🔵 INFO |
 | `ALIBABA_ASSIGN_IN_CONDITION` | 条件表达式中禁止插入赋值语句 | 🟡 WARNING |
 | `ALIBABA_COMPLEX_CONDITION` | 复杂条件赋值给有意义的布尔变量 | 🔵 INFO |
 | `ALIBABA_IF_DEPTH` | if-else 超过 3 层使用卫语句/策略模式 | 🔵 INFO |
+| `ALIBABA_LOOP_CONNECTION` | 数据库连接获取不应放在循环体内，应移至循环外 | 🔵 INFO |
 | `ALIBABA_AVOID_NOT` | 避免取反逻辑运算符 | 🔵 INFO |
 | `ALIBABA_LOOP_OBJECT_CREATION` | 循环中对象定义移至循环体外 | 🔵 INFO |
 | `ALIBABA_PARAM_VALIDATION` | 公开接口需要入参保护 | 🔵 INFO |
@@ -181,13 +187,14 @@
 | `ALIBABA_SINGLETON_THREAD_SAFE` | 单例对象需保证线程安全 | 🟡 WARNING |
 | `ALIBABA_HASHMAP_RESIZE` | 高并发避免 HashMap resize 死链 | 🔵 INFO |
 
-## 注释规范 (7 条)
+## 注释规范 (8 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
 | `ALIBABA_CLASS_JAVADOC` | 类缺少 Javadoc 注释（创建者和创建日期） | 🔵 INFO |
 | `ALIBABA_ABSTRACT_JAVADOC` | 抽象方法（接口方法）必须使用 Javadoc 注释 | 🔵 INFO |
 | `ALIBABA_INLINE_COMMENT` | 单行注释放在被注释语句上方 | 🔵 INFO |
+| `ALIBABA_MULTILINE_COMMENT` | 方法内超过 3 行连续 // 注释应改用 /* */ 多行注释格式 | 🔵 INFO |
 | `ALIBABA_FIXME` | 存在 FIXME 标记 | 🔵 INFO |
 | `ALIBABA_TODO` | 存在 TODO 标记 | 🔵 INFO |
 | `ALIBABA_COMMENTED_CODE` | 删除被注释的代码 | 🔵 INFO |
@@ -287,10 +294,11 @@
 | `ALIBABA_ANTI_REPLAY` | 在使用平台资源（短信、邮件、电话、下单、支付）时，必须实现正确的防重放机制 | 🟡 WARNING |
 | `ALIBABA_PERMISSION_CHECK` | 操作方法必须进行权限控制校验 | 🟡 WARNING |
 
-## MySQL 数据库 (39 条)
+## MySQL 数据库 (40 条)
 
 | 规则 ID | 说明 | 严重度 |
 |---------|------|--------|
+| `ALIBABA_ALIAS_AS` | SQL 语句中表别名前推荐加 as，如 'table as alias' | 🔵 INFO |
 | `ALIBABA_SQL_IS_PREFIX` | 布尔字段使用 is_xxx 命名 | 🟡 WARNING |
 | `ALIBABA_SQL_FIELD_CASE` | 字段名小写字母或数字 | 🟡 WARNING |
 | `ALIBABA_TABLE_PLURAL` | 表名不使用复数名词 | 🟡 WARNING |
