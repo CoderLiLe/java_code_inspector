@@ -86,6 +86,7 @@ java_code_inspector/
 │       └── TestExample.java
 ├── docs/                         # 文档目录
 │   ├── ALIBABA_RULES.md          # 阿里规约规则总表（293条）
+│   ├── JAVA_MANUAL.md            # 《Java开发手册(黄山版)》全文（1946行）
 │   ├── ARCHITECTURE.md           # 架构说明
 │   └── CONFIG.md                 # 配置参考
 ├── java_inspector_config.json    # 默认配置文件
