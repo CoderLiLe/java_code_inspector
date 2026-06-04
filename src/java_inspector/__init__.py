@@ -1,3 +1,4 @@
+"""java_inspector — Java 静态代码分析工具"""
 from java_inspector.models import Severity, ReportFormat, CodeIssue, CodeMetrics
 from java_inspector.config import InspectionConfig
 from java_inspector.inspector import JavaCodeInspector

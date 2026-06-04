@@ -1,3 +1,4 @@
+"""配置管理 — 加载合并 JSON 配置与默认值"""
 import copy
 import json
 import os

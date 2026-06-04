@@ -1,3 +1,4 @@
+"""命令行入口 — 参数解析与执行编排"""
 import argparse
 import os
 

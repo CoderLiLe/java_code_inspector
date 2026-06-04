@@ -1,3 +1,4 @@
+"""CI/CD 集成 — 质量门禁与退出码控制"""
 from typing import Dict, List
 
 from java_inspector.models import CodeIssue, Severity

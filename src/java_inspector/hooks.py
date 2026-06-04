@@ -1,3 +1,4 @@
+"""Git 钩子 — 安装 pre-commit 钩子"""
 import os
 import subprocess
 

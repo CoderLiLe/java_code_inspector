@@ -1,3 +1,4 @@
+"""数据模型 — CodeIssue、CodeMetrics 等核心类型定义"""
 from dataclasses import dataclass
 from enum import Enum
 

@@ -1,3 +1,4 @@
+"""核心检查引擎 — 解析 Java 源码、运行规则、收集问题"""
 import hashlib
 import os
 import re

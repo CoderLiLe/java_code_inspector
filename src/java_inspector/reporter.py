@@ -1,3 +1,4 @@
+"""报告生成器 — 支持 text/json/csv/xml/html 五种输出格式"""
 import json
 import xml.etree.ElementTree as ET
 from dataclasses import asdict
