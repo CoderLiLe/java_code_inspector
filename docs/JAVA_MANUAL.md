@@ -845,32 +845,25 @@ count.addAndGet(1);
 <span style="color:#0366d6">**说明：**</span>注意 break 是退出 switch 语句块，而 return 是退出方法体。
 2. <span style="color:red">**【强制】**</span>当 switch 括号内的变量类型为 String 并且此变量为外部参数时，必须先进行 null 判断。
 <span style="color:#d73a49">**反例：**</span>如下的代码输出是什么？
-public class SwitchString {
-public static void main(String[] args) {
-method(null);
     ```java
-    }
-public static void method(String param) {
-    switch (param) {
-        // 肯定不是进入这里
-    ```
-case "sth":
-    ```java
-    System.out.println("it's sth");
-    break;
-    // 也不是进入这里
-    ```
-case "null":
-    ```java
-    System.out.println("it's null");
-    break;
-    // 也不是进入这里
-    ```
-default:
-    ```java
-    System.out.println("default");
-    }
-    }
+    public class SwitchString {
+        public static void main(String[] args) {
+            method(null);
+        }
+        public static void method(String param) {
+            switch (param) {
+                // 肯定不是进入这里
+                case "sth":
+                    System.out.println("it's sth");
+                    break;
+                // 也不是进入这里
+                case "null":
+                    System.out.println("it's null");
+                    break;
+                default:
+                    System.out.println("default");
+            }
+        }
     }
     ```
 3. <span style="color:red">**【强制】**</span>在 if / else / for / while / do 语句中必须使用大括号。
