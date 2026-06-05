@@ -640,10 +640,12 @@ Collections.sort 会抛 IllegalArgumentException 异常。
 16. <span style="color:green">**【推荐】**</span>泛型集合使用时，在 JDK7 及以上，使用 diamond 语法或全省略。
 <span style="color:#0366d6">**说明：**</span>菱形泛型，即 diamond，直接使用<>来指代前边已经指定的类型。
 <span style="color:#28a745">**正例：**</span>
-// diamond 方式，即<>
-HashMap<String, String> userCache = new HashMap<>(16);
-// 全省略方式
-ArrayList<User> users = new ArrayList(10);
+    ```java
+    // diamond 方式，即<>
+    HashMap<String, String> userCache = new HashMap<>(16);
+    // 全省略方式
+    ArrayList<User> users = new ArrayList(10);
+    ```
 17. <span style="color:green">**【推荐】**</span>集合初始化时，指定集合初始值大小。
 <span style="color:#0366d6">**说明：**</span>HashMap 使用构造方法 HashMap(int initialCapacity) 进行初始化时，如果暂时无法确定集合大小，那么指
 定默认值（16）即可。
