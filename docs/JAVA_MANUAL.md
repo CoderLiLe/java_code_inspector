@@ -602,14 +602,12 @@ instanceof 判断，避免抛出 ClassCastException 异常。
     List<String> list = new ArrayList<>();
     list.add("1");
     list.add("2");
-    ```
-Iterator<String> iterator = list.iterator();
-while (iterator.hasNext()) {
-String item = iterator.next();
-if (删除元素的条件) {
-    ```java
-    iterator.remove();
-    }
+    Iterator<String> iterator = list.iterator();
+    while (iterator.hasNext()) {
+        String item = iterator.next();
+        if (删除元素的条件) {
+            iterator.remove();
+        }
     }
     ```
 <span style="color:#d73a49">**反例：**</span>
