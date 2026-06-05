@@ -664,6 +664,7 @@ entrySet() 返回的是 K-V 值组合的 Set 集合。
 | TreeMap | 不允许为 null | 允许为 null | AbstractMap | 线程不安全 |
 | ConcurrentHashMap | 不允许为 null | 不允许为 null | AbstractMap | 锁分段技术（JDK8:CAS） |
 | HashMap | 允许为 null | 允许为 null | AbstractMap | 线程不安全 |
+
 <span style="color:#d73a49">**反例：**</span>由于 HashMap 的干扰，很多人认为 ConcurrentHashMap 是可以置入 null 值，而事实上，存储 null 值时会抛
 出 NPE 异常。
 20. <span style="color:#888888">**【参考】**</span>合理利用好集合的有序性（sort）和稳定性（order），避免集合的无序性（unsort）和不稳定
