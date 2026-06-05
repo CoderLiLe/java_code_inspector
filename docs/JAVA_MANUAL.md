@@ -992,8 +992,8 @@ selfInterrupt();
     * @author yangguanbao
     * @date 2021/11/26
     *
+    */
     ```
-**/
 4. <span style="color:red">**【强制】**</span>方法内部单行注释，在被注释语句上方另起一行，使用 // 注释。方法内部多行注释使用 /* */
 注释，注意与代码对齐。
 5. <span style="color:red">**【强制】**</span>所有的枚举类型字段必须要有注释，说明每个数据项的用途。
