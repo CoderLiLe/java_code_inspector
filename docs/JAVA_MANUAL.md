@@ -814,17 +814,15 @@ volatile 型，（比如修改 helper 的属性声明为 private volatile Helper
         private volatile Helper helper = null;
         public Helper getHelper() {
             if (helper == null) {
-    ```
-synchronized(this) {
-    ```java
-    if (helper == null) {
-        helper = new Helper();
-    }
-    }
-    }
-return helper;
-    }
-// other methods and fields...
+                synchronized(this) {
+                    if (helper == null) {
+                        helper = new Helper();
+                    }
+                }
+            }
+            return helper;
+        }
+        // other methods and fields...
     }
     ```
 17. <span style="color:#888888">**【参考】**</span>volatile 解决多线程内存不可见问题对于一写多读，是可以解决变量同步问题，但是如果多
