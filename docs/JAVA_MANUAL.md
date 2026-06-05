@@ -1185,12 +1185,10 @@ NumberFormatException 来实现。
         try {
             // x 等于 1，此处不返回
             return ++x;
-    ```
-} finally {
-    ```java
-    // 返回的结果是 2
-    return ++x;
-    }
+        } finally {
+            // 返回的结果是 2
+            return ++x;
+        }
     }
     ```
 8. <span style="color:red">**【强制】**</span>捕获异常与抛异常，必须是完全匹配，或者捕获异常是抛异常的父类。
