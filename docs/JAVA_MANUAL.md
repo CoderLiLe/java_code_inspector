@@ -748,26 +748,26 @@ objectThreadLocal.remove();
     // ...
     lock.lock();
     try {
+        doSomething();
+        doOthers();
+    } finally {
+        lock.unlock();
+    }
     ```
-doSomething();
-doOthers();
-} finally {
-lock.unlock();
-}
 <span style="color:#d73a49">**反例：**</span>
     ```java
     Lock lock = new XxxLock();
     // ...
     try {
         // 如果此处抛出异常，则直接执行 finally 代码块
+        doSomething();
+        // 无论加锁是否成功，finally 代码块都会执行
+        lock.lock();
+        doOthers();
+    } finally {
+        lock.unlock();
+    }
     ```
-doSomething();
-// 无论加锁是否成功，finally 代码块都会执行
-lock.lock();
-doOthers();
-} finally {
-lock.unlock();
-}
 10. <span style="color:red">**【强制】**</span>在使用尝试机制来获取锁的方式中，进入业务代码块之前，必须先判断当前线程是否持有锁。
 锁的释放规则与锁的阻塞等待方式相同。
 <span style="color:#0366d6">**说明：**</span>Lock 对象的 unlock 方法在执行时，它会调用 AQS 的 tryRelease 方法（取决于具体实现类），如果当前线程不
@@ -779,13 +779,11 @@ lock.unlock();
     boolean isLocked = lock.tryLock();
     if (isLocked) {
         try {
-    ```
-doSomething();
-doOthers();
-} finally {
-    ```java
-    lock.unlock();
-    }
+            doSomething();
+            doOthers();
+        } finally {
+            lock.unlock();
+        }
     }
     ```
 11. <span style="color:red">**【强制】**</span>并发修改同一记录时，避免更新丢失，需要加锁。要么在应用层加锁，要么在缓存加锁，要么
