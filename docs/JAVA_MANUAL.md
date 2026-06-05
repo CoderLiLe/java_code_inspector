@@ -936,11 +936,13 @@ default:
     }
     ```
 <span style="color:#d73a49">**反例：**</span>
-public final void acquire(long arg) {
-if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg)) {
-selfInterrupt();
-}
-}
+    ```java
+    public final void acquire(long arg) {
+        if (!tryAcquire(arg) && acquireQueued(addWaiter(Node.EXCLUSIVE), arg)) {
+            selfInterrupt();
+        }
+    }
+    ```
 9. <span style="color:green">**【推荐】**</span>不要在其它表达式（尤其是条件表达式）中，插入赋值语句。
 <span style="color:#0366d6">**说明：**</span>赋值点类似于人体的穴位，对于代码的理解至关重要，所以赋值语句需要清晰地单独成为一行。
 <span style="color:#d73a49">**反例：**</span>
