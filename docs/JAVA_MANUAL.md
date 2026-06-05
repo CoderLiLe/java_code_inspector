@@ -115,7 +115,7 @@ public class ResourceObserver;
 接口基础常量 String COMPANY = "alibaba";
 <span style="color:#d73a49">**反例：**</span>接口方法定义 public abstract void commit();
 <span style="color:#0366d6">**说明：**</span>JDK8 中接口允许有默认实现，那么这个 default 方法，是对所有实现类都有价值的默认实现。
-17.接口和实现类的命名有两套规则：
+17. 接口和实现类的命名有两套规则：
 1）<span style="color:red">**【强制】**</span>对于 Service 和 DAO 类，基于 SOA 的理念，暴露出来的服务一定是接口，内部的实现类用 Impl 的后缀
 与接口区别。
 <span style="color:#28a745">**正例：**</span>CacheServiceImpl 实现 CacheService 接口。
