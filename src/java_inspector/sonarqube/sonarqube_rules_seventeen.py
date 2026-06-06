@@ -1,51 +1,14 @@
 """SonarQubeCheckerSeventeen — 第十七批规则"""
-"""SonarQubeCheckerSeventeen — 第十七批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _short_ann_name(node):
     return getattr(node, "name", "").split(".")[-1]
 
-
-class SonarQubeCheckerSeventeen:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerSeventeen(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_cdi_injection(tree, file_path, content)
@@ -71,7 +34,7 @@ class SonarQubeCheckerSeventeen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_FIELD_INJECTION_V2",
                                   "S3306: 字段注入应替换为构造器注入",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S3749: @Resource on field
             if isinstance(node, javalang_tree.Annotation):
@@ -93,7 +56,7 @@ class SonarQubeCheckerSeventeen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_INJECT_NO_INTERFACE",
                                   "S1656: @Inject 注解不建议用于具体类的方法",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
     # ==================== Lambda / Stream ====================
 
@@ -122,20 +85,20 @@ class SonarQubeCheckerSeventeen:
                                 "mapToLong", "mapToDouble"):
                     self._add(file_path, "SONAR_STREAM_INTERMEDIATE_V2",
                               "S3958: Stream 中间操作可能需要终端操作才能执行",
-                              _sq_severity("MAJOR"), line=i)
+                              sq_severity("MAJOR"), line=i)
 
         # S6204: Stream.toList() (Java 16+)
         for i, line in enumerate(lines, 1):
             if re.search(r'\.collect\s*\(\s*Collectors\.toList\s*\(\s*\)\s*\)', line):
                 self._add(file_path, "SONAR_STREAM_TO_LIST_V2",
                           "S6204: 可改用 Stream.toList() (Java 16+)",
-                          _sq_severity("MINOR"), line=i)
+                          sq_severity("MINOR"), line=i)
 
             # S3864: Stream.peek for logging (additional)
             if re.search(r'\.peek\s*\(\s*(System\.out|log|LOGGER|logger)', line):
                 self._add(file_path, "SONAR_PEEK_SIDE_EFFECT",
                           "S3864: peek 不应用于调试以外的日志记录",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
     # ==================== Generics / Types ====================
 
@@ -167,7 +130,7 @@ class SonarQubeCheckerSeventeen:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_UNUSED_TYPE_PARAM_V2",
                                           "S2326: 未使用的泛型类型参数 '" + tp_name + "'",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
                                 break
 
             # S2437: Boxing/unboxing (already covered)
@@ -195,7 +158,7 @@ class SonarQubeCheckerSeventeen:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_ABS_NEG_V2",
                                           "S3030: Math.abs 无法返回负数绝对值",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S1711: Raw type usage (additional)
         for i, line in enumerate(lines, 1):
@@ -203,7 +166,7 @@ class SonarQubeCheckerSeventeen:
                not re.search(r'<(?!>)', line):
                 self._add(file_path, "SONAR_RAW_TYPE_V2",
                           "S1711: 应使用泛型而非原始类型",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
     # ==================== Enums / Annotations ====================
 
@@ -219,7 +182,7 @@ class SonarQubeCheckerSeventeen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_ENUM_NAMING",
                               "S2344: 枚举名不应全为大写",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S3062: Enum field naming
             if isinstance(node, javalang_tree.FieldDeclaration):
@@ -241,7 +204,7 @@ class SonarQubeCheckerSeventeen:
                                 l, c = self._pos(decl)
                                 self._add(file_path, "SONAR_ABSTRACT_PUBLIC_CTOR",
                                           "S2430: 抽象类的构造器应为 protected",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
             # S2436: Too many generic type parameters
             if isinstance(node, (javalang_tree.ClassDeclaration, javalang_tree.InterfaceDeclaration,
@@ -251,7 +214,7 @@ class SonarQubeCheckerSeventeen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_MANY_TYPE_PARAMS",
                               "S2436: 过多的泛型参数（" + str(len(type_params)) + " 个）",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S1656: Annotation with retention
             if isinstance(node, javalang_tree.Annotation):
@@ -287,7 +250,7 @@ class SonarQubeCheckerSeventeen:
                                 l, c = self._pos(decl)
                                 self._add(file_path, "SONAR_REFERENCE_EQUALS_IN_EQUALS",
                                           "S2442: equals() 中不应使用 ==",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
             # S2622: Log format string
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -303,7 +266,7 @@ class SonarQubeCheckerSeventeen:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_LOG_PLACEHOLDER",
                                           "S2622: 日志占位符无对应参数",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
             # S3010: Cyclomatic complexity in equals
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -317,4 +280,4 @@ class SonarQubeCheckerSeventeen:
             if re.search(r'(TimeUnit\.\w+\.sleep|Thread\.sleep)\s*\(\s*\d{4,}', line):
                 self._add(file_path, "SONAR_MAGIC_SLEEP",
                           "S2473: sleep/超时时间应定义为命名常量",
-                          _sq_severity("MINOR"), line=i)
+                          sq_severity("MINOR"), line=i)

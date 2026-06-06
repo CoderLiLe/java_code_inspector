@@ -1,6 +1,9 @@
 """Git 钩子 — 安装 pre-commit 钩子"""
+import logging
 import os
 import subprocess
+
+logger = logging.getLogger(__name__)
 
 
 def install_git_hook():
@@ -25,4 +28,4 @@ exit 0
         f.write(hook_content)
 
     os.chmod(hook_path, 0o755)
-    print("Git预提交钩子安装完成")
+    logger.info("Git预提交钩子安装完成")

@@ -1,24 +1,9 @@
 """SonarQubeCheckerSixteen — 第十六批规则"""
-"""SonarQubeCheckerSixteen — 第十六批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,29 +16,7 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
-class SonarQubeCheckerSixteen:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerSixteen(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_json_xml(tree, file_path, content)
@@ -85,7 +48,7 @@ class SonarQubeCheckerSixteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_JSON_IGNORE_REDUNDANT",
                                   "S2445: @JsonIgnore 标注在 getter 上应配合 @JsonProperty",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S4747: JAX-RS @QueryParam injection
             if isinstance(node, javalang_tree.Annotation):
@@ -94,14 +57,14 @@ class SonarQubeCheckerSixteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_QUERYPARAM_VALIDATION",
                               "S4747: @QueryParam 参数应有校验或默认值",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S5689: XMLDecoder usage
         for i, line in enumerate(lines, 1):
             if re.search(r'XMLDecoder\s*\(', line):
                 self._add(file_path, "SONAR_XML_DECODER",
                           "S5689: XMLDecoder 可能导致反序列化漏洞",
-                          _sq_severity("CRITICAL"), line=i)
+                          sq_severity("CRITICAL"), line=i)
 
             # S2755: SAXParser external entities (additional variants)
             if re.search(r'DocumentBuilder|SAXParser|SAXReader|SAXBuilder', line) and \
@@ -109,7 +72,7 @@ class SonarQubeCheckerSixteen:
                 if not re.search(r'setFeature|setProperty', line):
                     self._add(file_path, "SONAR_XXE_PARSER",
                               "S2755: XML 解析器应禁用外部实体处理",
-                              _sq_severity("MAJOR"), line=i)
+                              sq_severity("MAJOR"), line=i)
 
     # ==================== NIO / Reflection ====================
 
@@ -136,7 +99,7 @@ class SonarQubeCheckerSixteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SET_ACCESSIBLE",
                                   "S3011: 使用 setAccessible(true) 破坏封装性",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S2135: Paths.get (already covered in seven)
 
@@ -149,7 +112,7 @@ class SonarQubeCheckerSixteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_FILES_LINES_STREAM",
                                   "S3039: Files.lines() 返回的 Stream 应关闭",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S4087: FileChannel read loop
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -168,7 +131,7 @@ class SonarQubeCheckerSixteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_METHOD_HANDLE",
                               "S4488: 使用 MethodHandle 应确保安全性",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
             # S4551: Proxy usage
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -177,7 +140,7 @@ class SonarQubeCheckerSixteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_PROXY_INSTANCE",
                               "S4551: 代理对象应谨慎使用",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S4347: SecureRandom (additional content check)
         for i, line in enumerate(lines, 1):
@@ -217,7 +180,7 @@ class SonarQubeCheckerSixteen:
                                     l, c = self._pos(node)
                                     self._add(file_path, "SONAR_DATE_MUTABLE_FIELD",
                                               "S2408: 可变日期字段应进行防御性复制",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
             # S2386: Calendar.getInstance (mutable constant)
             if isinstance(node, javalang_tree.FieldDeclaration):
@@ -232,7 +195,7 @@ class SonarQubeCheckerSixteen:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_MUTABLE_DATE_CONSTANT",
                                       "S2386: 可变日期/时间对象不应定义为常量",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2387: Child field hides parent
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -266,7 +229,7 @@ class SonarQubeCheckerSixteen:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_SQL_CONCAT_INJECTION",
                                       "S1109: SQL 查询中使用字符串拼接可能导致注入",
-                                      _sq_severity("BLOCKER"), line=l, column=c)
+                                      sq_severity("BLOCKER"), line=l, column=c)
                             break
 
             # S2111: ResultSet.next() in loop pattern
@@ -290,11 +253,11 @@ class SonarQubeCheckerSixteen:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_LIKE_INJECTION",
                                           "S2122: LIKE 查询应使用参数化查询",
-                                          _sq_severity("BLOCKER"), line=l, column=c)
+                                          sq_severity("BLOCKER"), line=l, column=c)
 
         # S2077: SQL formatting with format()
         for i, line in enumerate(lines, 1):
             if re.search(r'String\.format\s*\([^)]*SELECT|String\.format\s*\([^)]*INSERT|String\.format\s*\([^)]*UPDATE|String\.format\s*\([^)]*DELETE', line, re.I):
                 self._add(file_path, "SONAR_FORMAT_SQL_INJECTION",
                           "S2077: 使用 String.format() 构造 SQL 可能导致注入",
-                          _sq_severity("BLOCKER"), line=i)
+                          sq_severity("BLOCKER"), line=i)

@@ -1,24 +1,9 @@
 """SonarQubeCheckerTwelve — 第十二批规则"""
-"""SonarQubeCheckerTwelve — 第十二批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,33 +16,10 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
 def _get_base_type_name(t):
     return _get_full_type_name(t).split(".")[-1]
 
-
-class SonarQubeCheckerTwelve:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerTwelve(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_security_twelve(tree, file_path, content)
@@ -80,7 +42,7 @@ class SonarQubeCheckerTwelve:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_CHECKSUM_INSECURE",
                               "S2631: Checksum 不适用于安全用途，应使用 MAC",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S2068: Hardcoded password (additional patterns)
             if isinstance(node, javalang_tree.LocalVariableDeclaration):
@@ -96,7 +58,7 @@ class SonarQubeCheckerTwelve:
                                     l, c = self._pos(decl)
                                     self._add(file_path, "SONAR_HARDCODED_CREDENTIAL_TWELVE",
                                               "S2068: 凭据不应硬编码在代码中",
-                                              _sq_severity("BLOCKER"), line=l, column=c)
+                                              sq_severity("BLOCKER"), line=l, column=c)
 
             # S2245: Predictable random (additional)
             if isinstance(node, javalang_tree.ClassCreator):
@@ -109,7 +71,7 @@ class SonarQubeCheckerTwelve:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_PREDICTABLE_RANDOM_TWELVE",
                                   "S2245: 使用 java.util.Random 而非 SecureRandom 可能导致可预测值",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S2083: Path traversal (additional)
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -121,7 +83,7 @@ class SonarQubeCheckerTwelve:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_PATH_TRAVERSAL_TWELVE",
                                       "S2083: 未经校验的文件路径可能导致路径遍历漏洞",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2089: HTTP parameter pollution
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -130,7 +92,7 @@ class SonarQubeCheckerTwelve:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_HTTP_PARAM_POLLUTION",
                               "S2089: HTTP 参数应有校验和长度限制",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S2092: Cookie secure (already in ext)
 
@@ -143,14 +105,14 @@ class SonarQubeCheckerTwelve:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_UNVALIDATED_REDIRECT",
                               "S5168: 未验证的重定向可能导致开放重定向漏洞",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S2070: Weak hash algorithm (additional)
             for i, line in enumerate(lines, 1):
                 if re.search(r'\bMessageDigest\.getInstance\s*\(\s*"(MD2|MD4|MD5|SHA-?0?1?)"', line):
                     self._add(file_path, "SONAR_WEAK_HASH",
                               "S2070: 弱哈希算法 " + re.search(r'"(MD2|MD4|MD5|SHA-?0?1?)"', line).group(1) + " 不安全",
-                              _sq_severity("MAJOR"), line=i)
+                              sq_severity("MAJOR"), line=i)
 
             # S3329: Cipher without IV (already in fourth)
 
@@ -161,7 +123,7 @@ class SonarQubeCheckerTwelve:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_TIMING_ATTACK",
                               "S5344: 应使用 MessageDigest.isEqual() 防止时序攻击",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S2629: Log injection (already in base)
 
@@ -183,7 +145,7 @@ class SonarQubeCheckerTwelve:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_INTERFACE_TOO_LARGE",
                               "S1287: 接口方法过多（" + str(len(methods)) + " 个），应考虑拆分",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S1701: Diamond operator (already in eight and full)
 
@@ -200,7 +162,7 @@ class SonarQubeCheckerTwelve:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_DEFAULT_ENCODING",
                                   "S1712: 使用默认编码可能导致编码不一致",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S1718: Identical expressions (already in base)
 
@@ -214,12 +176,12 @@ class SonarQubeCheckerTwelve:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_METHOD_UPPER_CASE",
                                   "S1845: 方法名不应全大写",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
                     elif name.islower() and "_" in name:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_METHOD_UNDERSCORE",
                                   "S1845: 方法名应使用驼峰式而非下划线分隔",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S1860: Synchronization on mutable field (already in ext)
 
@@ -247,7 +209,7 @@ class SonarQubeCheckerTwelve:
                         l, c = self._pos(decl)
                         self._add(file_path, "SONAR_INTERFACE_FIELD",
                                   "S3280: 接口中的字段隐式为 public static final，应避免",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S3358: Nested ternaries (already in base)
 
@@ -277,7 +239,7 @@ class SonarQubeCheckerTwelve:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_TYPE_NAME_CASE",
                               "S119: 类型名应以大写字母开头",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Performance ====================
 
@@ -320,7 +282,7 @@ class SonarQubeCheckerTwelve:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_ARRAYCOPY_LOOP",
                               "S2126: 数组复制应使用 System.arraycopy()",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S2131: Split with string (already in ext)
 
@@ -341,7 +303,7 @@ class SonarQubeCheckerTwelve:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_URL_LOOP",
                                           "S2145: 循环中创建 URL/URI 对象可能影响性能",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
                                 break
 
             # S2153: Boxing in loops (already in base)
@@ -386,7 +348,7 @@ class SonarQubeCheckerTwelve:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_UNNECESSARY_PREFIX",
                                   "S2296: 不必要的括号嵌套",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S2301: Map computeIfAbsent (already in base)
 
@@ -400,7 +362,7 @@ class SonarQubeCheckerTwelve:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_PRIVATE_COULD_BE_STATIC",
                                       "S2325: 私有方法不访问实例字段可声明为 static",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
             # S2386: Mutable array (already in base)
 
@@ -447,7 +409,7 @@ class SonarQubeCheckerTwelve:
                                 l, c = self._pos(node2)
                                 self._add(file_path, "SONAR_PACKAGE_NAMING_TWELVE",
                                           "S120: 包名应全部小写",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
                                 break
 
             # S1120: serialVersionUID (already in full)
@@ -522,7 +484,7 @@ class SonarQubeCheckerTwelve:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_CLASS_TOO_LARGE_ORG",
                               "S1598: 类职责过多（" + str(total_count) + " 个成员），应拆分",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S1067: Complex expression (already in five)
 

@@ -1,25 +1,10 @@
 """SonarQubeCheckerFourth — 第四批规则"""
-"""SonarQubeCheckerFourth — 第四批规则"""
 import re
 from typing import List
 
 import javalang
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -32,34 +17,7 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
-class SonarQubeCheckerFourth:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
-
-    _METHOD_BLACKLIST = {
-        "main", "toString", "equals", "hashCode", "getClass",
-        "notify", "notifyAll", "wait", "finalize", "clone",
-    }
+class SonarQubeCheckerFourth(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_security_extra(tree, file_path, content)
@@ -79,7 +37,7 @@ class SonarQubeCheckerFourth:
             for m in re.finditer(r'"(https?|ftp|file|ldap|rmi|jndi)://[^"]{3,}"', line):
                 self._add(file_path, "SONAR_HARDCODED_URI",
                           "S1075: URI 应定义为常量而非硬编码字符串",
-                          _sq_severity("MINOR"), line=i, column=m.start())
+                          sq_severity("MINOR"), line=i, column=m.start())
 
         # S2083: Path traversal (File from user input)
         for path, node in tree:
@@ -94,14 +52,14 @@ class SonarQubeCheckerFourth:
                                 l, c = self._pos(stmt)
                                 self._add(file_path, "SONAR_PATH_TRAVERSAL",
                                           "S2083: 应验证文件路径，避免路径遍历攻击",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S2092: Cookie should be secure
         for i, line in enumerate(lines, 1):
             if re.search(r'cookie\.setSecure\s*\(\s*false\s*\)', line, re.I):
                 self._add(file_path, "SONAR_COOKIE_SECURE",
                           "S2092: Cookie 应设置 Secure 标志为 true",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S2245/S2257: Predictable random (Random instead of SecureRandom)
         for path, node in tree:
@@ -112,7 +70,7 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_PREDICTABLE_RANDOM",
                               "S2245: 应使用 SecureRandom 而非 Random 生成随机数",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
                     continue
                 for declarator in getattr(node, "declarators", []) or []:
                     init = getattr(declarator, "initializer", None)
@@ -123,7 +81,7 @@ class SonarQubeCheckerFourth:
                             l, c = self._pos(declarator)
                             self._add(file_path, "SONAR_PREDICTABLE_RANDOM",
                                       "S2245: 应使用 SecureRandom 而非 Random 生成随机数",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
             elif isinstance(node, javalang_tree.LocalVariableDeclaration):
                 type_node = getattr(node, "type", None)
                 type_name = _get_full_type_name(type_node)
@@ -137,14 +95,14 @@ class SonarQubeCheckerFourth:
                                 l, c = self._pos(declarator)
                                 self._add(file_path, "SONAR_PREDICTABLE_RANDOM",
                                           "S2245: 应使用 SecureRandom 而非 Random 生成随机数",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S2278: ECB encryption mode
         for i, line in enumerate(lines, 1):
             if re.search(r'"AES/ECB/|"DES/ECB/|"DESede/ECB/', line):
                 self._add(file_path, "SONAR_ECB_MODE",
                           "S2278: 不应使用 ECB 加密模式，建议使用 CBC/GCM",
-                          _sq_severity("CRITICAL"), line=i)
+                          sq_severity("CRITICAL"), line=i)
 
         # S3329: CBC with predictable IV
         for path, node in tree:
@@ -157,7 +115,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_CBC_IV",
                                   "S3329: CBC 模式应使用安全的 IV（随机生成，不可预测）",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S4425: Weak XML parsing (SAXParser, DocumentBuilder)
         for path, node in tree:
@@ -168,7 +126,7 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_WEAK_XML_PARSER",
                               "S4425: XML 解析器应配置为禁用外部实体（XXE）",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S5304: JNDI lookup with user input
         for path, node in tree:
@@ -187,13 +145,13 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_JNDI_LOOKUP",
                                   "S5304: JNDI lookup 应避免使用用户输入，防止 JNDI 注入",
-                                  _sq_severity("CRITICAL"), line=l, column=c)
+                                  sq_severity("CRITICAL"), line=l, column=c)
                     elif "InitialContext" in node_str or "DirContext" in node_str or \
                          "Context" in parent_str:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_JNDI_LOOKUP",
                                   "S5304: JNDI lookup 应避免使用用户输入，防止 JNDI 注入",
-                                  _sq_severity("CRITICAL"), line=l, column=c)
+                                  sq_severity("CRITICAL"), line=l, column=c)
 
         # S5125: Jackson polymorphic deserialization
         for path, node in tree:
@@ -203,7 +161,7 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_JACKSON_POLYMORPHIC",
                               "S5125: Jackson 启用默认类型可能导致反序列化漏洞",
-                              _sq_severity("CRITICAL"), line=l, column=c)
+                              sq_severity("CRITICAL"), line=l, column=c)
 
     # ==================== Concurrency ====================
 
@@ -219,7 +177,7 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_WAIT_SYNC",
                               "S2446: " + member + "() 应在 synchronized 块中调用",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S3078: Volatile reference to mutable object
         for path, node in tree:
@@ -230,7 +188,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(declarator)
                         self._add(file_path, "SONAR_VOLATILE_MUTABLE",
                                   "S3078: volatile 修饰的字段如果指向可变对象，可能仍有线程安全问题",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S4065: ThreadLocal with synchronized
         for path, node in tree:
@@ -242,7 +200,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_THREADLOCAL_STATIC",
                                   "S4065: ThreadLocal 字段应声明为 static 以防止内存泄漏",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S2122: ScheduledThreadPoolExecutor should not use Runnable
         for path, node in tree:
@@ -258,7 +216,7 @@ class SonarQubeCheckerFourth:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_SCHEDULED_EXECUTOR",
                                           "S2122: ScheduledThreadPoolExecutor 应使用 Callable 而非 Runnable",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
 
         # S3631: Thread.run() detection (backup for S2689 in base)
         for path, node in tree:
@@ -277,7 +235,7 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_SERVLET_INPUT",
                               "S2886: 用户输入应经过验证后再使用",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Code Quality ====================
 
@@ -298,7 +256,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_FINALIZE_CALL",
                                   "S1114: finalize() 方法应调用 super.finalize()",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S2157: Cloneable without clone method
         for path, node in tree:
@@ -321,7 +279,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_CLONEABLE",
                                   "S2157: 实现 Cloneable 接口的类应重写 clone() 方法",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S2160: equals in subclass should call super.equals
         for path, node in tree:
@@ -338,7 +296,7 @@ class SonarQubeCheckerFourth:
                                     l, c = self._pos(decl)
                                     self._add(file_path, "SONAR_SUBCLASS_EQUALS",
                                               "S2160: 子类重写 equals() 应调用 super.equals()",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
         # S3577: Test class naming
         for path, node in tree:
@@ -355,7 +313,7 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STREAM_PEEK",
                               "S3864: Stream.peek() 是中间操作，仅在调试时使用",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S3878: Arrays passed to varargs should not be null
         for path, node in tree:
@@ -368,7 +326,7 @@ class SonarQubeCheckerFourth:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_NULL_VARARG",
                                       "S3878: 不应将 null 传递给可变参数",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
                             break
 
         # S3923: Switch with single branch
@@ -385,7 +343,7 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_SINGLE_BRANCH_SWITCH",
                               "S3923: 仅包含一个分支的 switch 应替换为 if 语句",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S3958: Intermediate stream methods should not be standalone
         for path, node in tree:
@@ -397,7 +355,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_STREAM_INTERMEDIATE",
                                   "S3958: 流中间操作（" + member + "）没有终端操作，不会执行",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S4158: Empty collections
         for path, node in tree:
@@ -410,7 +368,7 @@ class SonarQubeCheckerFourth:
             if re.search(r'\.stream\(\).*count\s*\(\s*\)\s*([=!]=|>|<)\s*0', line):
                 self._add(file_path, "SONAR_STREAM_COUNT_ZERO",
                           "S4158: 使用 stream().count() 检查是否为空，应使用 isEmpty()",
-                          _sq_severity("MINOR"), line=i)
+                          sq_severity("MINOR"), line=i)
 
         # S4242: Iterator hasNext/next balance
         for path, node in tree:
@@ -420,7 +378,7 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_ITERATOR_NEXT_BALANCE",
                               "S4242: 调用 next() 前应确保 hasNext() 返回 true",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S4276: Parameter name shadows field
         for path, node in tree:
@@ -459,7 +417,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_EQUALS_ASYMMETRY",
                                   "S2162: equals() 中使用 instanceof 可能导致不对称性，建议使用 getClass()",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S2200: compareTo should be consistent with equals
         for path, node in tree:
@@ -476,7 +434,7 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_COMPARETO_EQUALS",
                               "S2200: 实现 Comparable 接口的类应同时重写 equals()",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S2167: compareTo should be consistent with equals
         for path, node in tree:
@@ -499,7 +457,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_COMPARABLE_EQUALS",
                                   "S2167: 实现 Comparable 的类也应重写 equals() 以保持一致",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S3749: Class without equals/hashCode
         for path, node in tree:
@@ -524,7 +482,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_CLASS_EQUALS",
                                   "S3749: 类 '" + node.name + "' 包含多个字段但未重写 equals()",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S3996: URL.equals/hashCode triggers DNS lookup
         for path, node in tree:
@@ -536,7 +494,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_URL_EQUALS",
                                   "S3996: URL.equals() 和 hashCode() 会触发 DNS 解析，建议使用 URI",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S4166: Optional should not be null
         for path, node in tree:
@@ -550,7 +508,7 @@ class SonarQubeCheckerFourth:
             if re.search(r'\bOptional\s*<\s*\w+\s*>\s+\w+\s*=\s*null', line):
                 self._add(file_path, "SONAR_OPTIONAL_NULL",
                           "S4166: Optional 不应被赋值为 null，应使用 Optional.empty()",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S4201: Null checks on Optional
         for i, line in enumerate(lines, 1):
@@ -559,7 +517,7 @@ class SonarQubeCheckerFourth:
                re.search(r'Optional', line):
                 self._add(file_path, "SONAR_OPTIONAL_NULL_CHECK",
                           "S4201: 不应使用 == 检查 Optional 是否为 null，应使用 isPresent()",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S4351: Equals override with field comparison
         for path, node in tree:
@@ -572,7 +530,7 @@ class SonarQubeCheckerFourth:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_EQUALS_VALUE_OF",
                                   "S4351: equals() 中应直接比较字段值，而非使用 valueOf/toString",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S4423: Weak SSL/TLS (duplicate check with base, add protocol check)
         for i, line in enumerate(lines, 1):
@@ -580,7 +538,7 @@ class SonarQubeCheckerFourth:
                "setProtocol" in line:
                 self._add(file_path, "SONAR_WEAK_PROTOCOL",
                           "S4423: 应使用 TLSv1.2 或更高版本，避免使用 SSL/TLSv1",
-                          _sq_severity("CRITICAL"), line=i)
+                          sq_severity("CRITICAL"), line=i)
 
         # S2229: LDAP anonymous detection (backup for S2229 in ext)
         for path, node in tree:
@@ -591,4 +549,4 @@ class SonarQubeCheckerFourth:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_LDAP_ANONYMOUS_V2",
                               "S2229: LDAP 认证应使用简单认证，避免匿名绑定",
-                              _sq_severity("CRITICAL"), line=l, column=c)
+                              sq_severity("CRITICAL"), line=l, column=c)

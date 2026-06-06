@@ -1,53 +1,12 @@
 """SonarQubeCheckerFull — 完整规则集"""
-"""SonarQubeCheckerFull — 完整规则集"""
 import re
 from typing import List
 
 import javalang
 from javalang import tree as javalang_tree
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
-
-class SonarQubeCheckerFull:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
-
-    _METHOD_BLACKLIST = {
-        "main", "toString", "equals", "hashCode", "getClass",
-        "notify", "notifyAll", "wait", "finalize", "clone",
-    }
+class SonarQubeCheckerFull(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_error_prone(tree, file_path, content)
@@ -69,7 +28,7 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_TOO_MANY_PARAMS",
                               "S107: 方法 '" + node.name + "' 有 " + str(len(params)) + " 个参数，建议不超过 7 个",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S1118: Utility classes should not have public constructors
         for path, node in tree:
@@ -93,7 +52,7 @@ class SonarQubeCheckerFull:
                                 l, c = self._pos(decl)
                                 self._add(file_path, "SONAR_UTILITY_CLASS_CONSTRUCTOR",
                                           "S1118: 工具类 '" + node.name + "' 应包含私有构造方法以防止实例化",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S1134: Track uses of "FIXME" tags
         for i, line in enumerate(lines, 1):
@@ -101,7 +60,7 @@ class SonarQubeCheckerFull:
                 col = line.index(m.group())
                 self._add(file_path, "SONAR_FIXME_TAG",
                           "S1134: 代码中包含 FIXME 标记，表明存在待修复的问题",
-                          _sq_severity("INFO"), line=i, column=col)
+                          sq_severity("INFO"), line=i, column=col)
 
         # S1135: Track uses of "TODO" tags
         for i, line in enumerate(lines, 1):
@@ -109,7 +68,7 @@ class SonarQubeCheckerFull:
                 col = line.index(m.group())
                 self._add(file_path, "SONAR_TODO_TAG",
                           "S1135: 代码中包含 TODO 标记，表明有未完成的工作",
-                          _sq_severity("INFO"), line=i, column=col)
+                          sq_severity("INFO"), line=i, column=col)
 
         # S1182: Classes that override clone() should call super.clone()
         for path, node in tree:
@@ -125,7 +84,7 @@ class SonarQubeCheckerFull:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_CLONE_SUPER",
                                   "S1182: 重写 clone() 的方法应调用 super.clone()",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S1244: Floating point numbers should not be compared with ==
         for path, node in tree:
@@ -142,7 +101,7 @@ class SonarQubeCheckerFull:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_FLOAT_COMPARE",
                                       "S1244: 浮点数不应使用 '==' 比较，应检查误差范围",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S1258: Local variables should not shadow fields
         field_names = set()
@@ -162,7 +121,7 @@ class SonarQubeCheckerFull:
                                 l, c = self._pos(stmt)
                                 self._add(file_path, "SONAR_VARIABLE_SHADOWS_FIELD",
                                           "S1258: 局部变量 '" + name + "' 遮蔽了同名字段",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S134: Nested control flow should not be too deep (depth > 4)
         for path, node in tree:
@@ -193,7 +152,7 @@ class SonarQubeCheckerFull:
                 for line in check_lines:
                     self._add(file_path, "SONAR_NESTED_DEPTH",
                               "S134: 控制流嵌套过深（超过 4 层），建议重构",
-                              _sq_severity("MAJOR"), line=line)
+                              sq_severity("MAJOR"), line=line)
 
         # S1481: Unused local variables
         for path, node in tree:
@@ -225,7 +184,7 @@ class SonarQubeCheckerFull:
                     if vname not in used_vars:
                         self._add(file_path, "SONAR_UNUSED_LOCAL",
                                   "S1481: 未使用的局部变量 '" + vname + "'，建议移除",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S2095: Resources should be closed
         for path, node in tree:
@@ -239,7 +198,7 @@ class SonarQubeCheckerFull:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_CLOSE_RESOURCE",
                                   "S2095: 打开的流/连接应使用 try-with-resources 或显式关闭",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S2123: Values should not be compared with == to Integer/Long etc.
         for path, node in tree:
@@ -261,7 +220,7 @@ class SonarQubeCheckerFull:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_VALUE_COMPARE",
                                       "S2123: 包装类型值应使用 equals() 而非 == 进行比较",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2235: Enum values should be compared with == (not equals)
         for path, node in tree:
@@ -271,14 +230,14 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_ENUM_EQUALS",
                               "S2235: 枚举值应使用 == 而非 equals() 进行比较",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S2254: Double Brace Initialization should not be used
         for i, line in enumerate(lines, 1):
             if re.search(r'new\s+[\w.]+\s*\(\s*\)\s*\{', line):
                 self._add(file_path, "SONAR_DOUBLE_BRACE",
                           "S2254: 不应使用双大括号初始化（匿名内部类），会导致内存泄漏",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S2676: "indexOf" should not be called on strings with a single character
         for path, node in tree:
@@ -296,7 +255,7 @@ class SonarQubeCheckerFull:
                             self._add(file_path, "SONAR_INDEXOF_CHAR",
                                       "S2676: indexOf/lastIndexOf 对单个字符应使用 char 字面量 '" +
                                       inner + "' 而非字符串 \"" + inner + "\"",
-                                      _sq_severity("MINOR"), line=l, column=c,
+                                      sq_severity("MINOR"), line=l, column=c,
                                       fix_suggestion="将 \"" + inner + "\" 替换为 '" + inner + "'")
 
         # S2677: "replace" should be called with char instead of String for single char
@@ -315,7 +274,7 @@ class SonarQubeCheckerFull:
                             self._add(file_path, "SONAR_REPLACE_CHAR",
                                       "S2677: String.replace() 对单个字符应使用 char 字面量 '" +
                                       inner + "' 而非字符串",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S2864: Direct entrySet iteration instead of keySet + get
         for path, node in tree:
@@ -327,7 +286,7 @@ class SonarQubeCheckerFull:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_KEYSET_ITERATION",
                                   "S2864: 使用 keySet() 遍历后调用 get() 效率较低，建议使用 entrySet()",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
         # S3011: Reflection should not be used
         for path, node in tree:
@@ -338,7 +297,7 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_REFLECTION",
                               "S3011: 不应使用反射 API '" + member + "()'，建议使用封装好的 API",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S3973: Empty statement (semicolon)
         for i, line in enumerate(lines, 1):
@@ -348,7 +307,7 @@ class SonarQubeCheckerFull:
                re.search(r'\{[\s]*;[\s]*\}', no_comment):
                 self._add(file_path, "SONAR_EMPTY_STATEMENT",
                           "S3973: 空语句（多余的分号），应移除",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S4032: Collection.addAll should be used instead of forEach add
         for path, node in tree:
@@ -364,7 +323,7 @@ class SonarQubeCheckerFull:
                                 l, c = self._pos(stmt)
                                 self._add(file_path, "SONAR_ADDALL",
                                           "S4032: 循环中逐个 add() 应替换为 addAll()",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
 
         # S4408: Classes with only static methods should be final
         for path, node in tree:
@@ -385,7 +344,7 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STATIC_CLASS_FINAL",
                               "S4408: 仅包含静态方法的类应声明为 final",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
     # ==================== Best Practices ====================
 
@@ -408,7 +367,7 @@ class SonarQubeCheckerFull:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_EMPTY_INTERFACE",
                                   "S114: 不应存在空的接口",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S115: Constant names should comply with a naming convention (UPPER_CASE)
         for path, node in tree:
@@ -424,7 +383,7 @@ class SonarQubeCheckerFull:
                                       "S115: 常量名称 '" + name + "' 应使用全大写加下划线格式（如 " +
                                       re.sub(r'(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])',
                                              '_', name).upper() + "）",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S116: Exception class names should end with "Exception"
         for path, node in tree:
@@ -436,7 +395,7 @@ class SonarQubeCheckerFull:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_EXCEPTION_NAMING",
                                       "S116: 异常类名 '" + node.name + "' 应以 'Exception' 结尾",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S117: Names of local variables should comply with naming convention
         for path, node in tree:
@@ -451,7 +410,7 @@ class SonarQubeCheckerFull:
                                 l, c = self._pos(declarator)
                                 self._add(file_path, "SONAR_VARIABLE_NAMING",
                                           "S117: 局部变量名 '" + name + "' 应使用 camelCase 命名",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
 
         # S119: Type parameter names should comply with naming convention
         for path, node in tree:
@@ -469,7 +428,7 @@ class SonarQubeCheckerFull:
                             continue
                         self._add(file_path, "SONAR_TYPE_PARAM_NAMING",
                                   "S119: 类型参数名 '" + tp_name + "' 应使用单大写字母（如 T, E, K, V）",
-                                  _sq_severity("MINOR"), line=l)
+                                  sq_severity("MINOR"), line=l)
 
         # S120: Package names should comply with naming convention
         for path, node in tree:
@@ -482,7 +441,7 @@ class SonarQubeCheckerFull:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_PACKAGE_NAMING",
                                       "S120: 包名 '" + pkg_name + "' 各部分应使用小写",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S1312: Loggers should be private static final
         def _get_full_type_name(t):
@@ -504,17 +463,17 @@ class SonarQubeCheckerFull:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_LOGGER_PRIVATE",
                                   "S1312: Logger 应声明为 private",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
                     if "static" not in modifiers:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_LOGGER_STATIC",
                                   "S1312: Logger 应声明为 static",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
                     if "final" not in modifiers:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_LOGGER_FINAL",
                                   "S1312: Logger 应声明为 final",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S1607: JUnit tests should include assertions
         for path, node in tree:
@@ -534,7 +493,7 @@ class SonarQubeCheckerFull:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_TEST_ASSERTION",
                                   "S1607: 测试方法 '" + node.name + "' 中不包含断言",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S1701: Diamond operator should be used
         for path, node in tree:
@@ -548,7 +507,7 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_DIAMOND",
                               "S1701: 应使用菱形运算符 <> 代替显式的泛型类型参数",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S2133: Strings should not be compared by == (partially covered in sonar_bugs)
         for path, node in tree:
@@ -564,7 +523,7 @@ class SonarQubeCheckerFull:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_STRING_COMPARE",
                                       "S2133: 不应使用 == 比较字符串结果，应使用 equals()",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2699: Tests should include assertions (duplicate check with S1607)
         # Reusing S1607 above, also check for test methods annotated with @Test
@@ -585,7 +544,7 @@ class SonarQubeCheckerFull:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_TEST_WITHOUT_ASSERTION",
                                   "S2699: @Test 方法 '" + node.name + "' 应包含断言",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S3252: Static members should be accessed statically
         for path, node in tree:
@@ -598,7 +557,7 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STATIC_ACCESS",
                               "S3252: 静态成员 '" + member + "' 应通过类名而非对象引用访问",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S3305: Annotations on enum constants
         for path, node in tree:
@@ -611,7 +570,7 @@ class SonarQubeCheckerFull:
                             l, c = self._pos(decl)
                             self._add(file_path, "SONAR_ENUM_CONSTANT_ANNOTATION",
                                       "S3305: 不应在枚举常量上使用注解",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S3546: Abstract classes should be declared with 'abstract' keyword
         for path, node in tree:
@@ -629,7 +588,7 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_ABSTRACT_CLASS",
                               "S3546: 包含抽象方法的类应使用 'abstract' 关键字声明",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Clarity ====================
 
@@ -649,7 +608,7 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_METHOD_NAMING",
                               "S100: 方法名 '" + name + "' 应使用 camelCase 命名规范",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S101: Class names should comply with naming convention (PascalCase)
         for path, node in tree:
@@ -660,7 +619,7 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_CLASS_NAMING",
                               "S101: 类名 '" + name + "' 应使用 PascalCase 命名规范",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S1066: Collapsible "if" statements
         for path, node in tree:
@@ -675,7 +634,7 @@ class SonarQubeCheckerFull:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_COLLAPSIBLE_IF",
                                   "S1066: 可合并的 if 语句，建议将内层条件合并到外层",
-                                  _sq_severity("MAJOR"), line=l, column=c,
+                                  sq_severity("MAJOR"), line=l, column=c,
                                   fix_suggestion="合并 if 条件")
 
         # S1117: Local variables should not shadow class type parameters or fields
@@ -693,7 +652,7 @@ class SonarQubeCheckerFull:
                                 l, c = self._pos(decl)
                                 self._add(file_path, "SONAR_VARIABLE_SHADOWS_TYPE_PARAM",
                                           "S1117: 局部变量 '" + name + "' 遮蔽了类型参数",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S1120: Serializable classes should have serialVersionUID
         # (Also activates S1220 which was previously non-functioning)
@@ -723,22 +682,22 @@ class SonarQubeCheckerFull:
                                         l, c = self._pos(decl)
                                         self._add(file_path, "SONAR_SERIAL_UID_PRIVATE",
                                                   "S1120: serialVersionUID 应声明为 private",
-                                                  _sq_severity("MAJOR"), line=l, column=c)
+                                                  sq_severity("MAJOR"), line=l, column=c)
                                     if "static" not in modifiers:
                                         l, c = self._pos(decl)
                                         self._add(file_path, "SONAR_SERIAL_UID_STATIC",
                                                   "S1120: serialVersionUID 应声明为 static",
-                                                  _sq_severity("MAJOR"), line=l, column=c)
+                                                  sq_severity("MAJOR"), line=l, column=c)
                                     if "final" not in modifiers:
                                         l, c = self._pos(decl)
                                         self._add(file_path, "SONAR_SERIAL_UID_FINAL",
                                                   "S1120: serialVersionUID 应声明为 final",
-                                                  _sq_severity("MAJOR"), line=l, column=c)
+                                                  sq_severity("MAJOR"), line=l, column=c)
                     if not has_uid:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SERIAL_VERSION_UID",
                                   "S1120: 实现 Serializable 的类 '" + node.name + "' 应定义 serialVersionUID",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S1126: Return of boolean expressions should not be wrapped in if-then-else
         for path, node in tree:
@@ -757,13 +716,13 @@ class SonarQubeCheckerFull:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_RETURN_BOOL_EXPR",
                                       "S1126: 应直接返回布尔表达式而非 if-else",
-                                      _sq_severity("MINOR"), line=l, column=c,
+                                      sq_severity("MINOR"), line=l, column=c,
                                       fix_suggestion="替换为 'return <condition>'")
                         elif "value=false" in then_str and "value=true" in else_str:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_RETURN_BOOL_EXPR",
                                       "S1126: 应直接返回布尔表达式而非 if-else",
-                                      _sq_severity("MINOR"), line=l, column=c,
+                                      sq_severity("MINOR"), line=l, column=c,
                                       fix_suggestion="替换为 'return !<condition>'")
 
         # S1340: Type parameter names should not be suspiciously long
@@ -780,7 +739,7 @@ class SonarQubeCheckerFull:
                             continue
                         self._add(file_path, "SONAR_TYPE_PARAM_LONG",
                                   "S1340: 类型参数名 '" + tp_name + "' 过长，建议使用单大写字母",
-                                  _sq_severity("MINOR"), line=l)
+                                  sq_severity("MINOR"), line=l)
 
         # S139: Comments should not be placed at the end of lines
         for i, line in enumerate(lines, 1):
@@ -790,7 +749,7 @@ class SonarQubeCheckerFull:
                 if code_part and len(code_part) > 0:
                     self._add(file_path, "SONAR_COMMENT_AT_END",
                               "S139: 不应在行尾添加注释，应将注释放在代码上方",
-                              _sq_severity("INFO"), line=i)
+                              sq_severity("INFO"), line=i)
 
         # S1659: Multiple variables should not be declared on the same line
         for path, node in tree:
@@ -800,7 +759,7 @@ class SonarQubeCheckerFull:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_MULTI_VAR_DECL",
                               "S1659: 不应在同一行声明多个变量，应分开声明",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S1763: Jump statements should not be followed by dead code
         for path, node in tree:
@@ -821,7 +780,7 @@ class SonarQubeCheckerFull:
                                 if l:
                                     self._add(file_path, "SONAR_DEAD_CODE_AFTER_JUMP",
                                               "S1763: 跳转语句之后的代码将无法执行，应移除",
-                                              _sq_severity("MAJOR"), line=l)
+                                              sq_severity("MAJOR"), line=l)
 
         # S1994: "for" loop increment clauses should modify loop variable
         for path, node in tree:
@@ -838,7 +797,7 @@ class SonarQubeCheckerFull:
                         self._add(file_path, "SONAR_FOR_LOOP_VARIABLE",
                                   "S1994: for 循环的增量部分应修改循环控制变量 '" +
                                   var_name + "'",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S3256: The iterator of a "for" loop should not be used in the loop body
         for path, node in tree:
@@ -862,7 +821,7 @@ class SonarQubeCheckerFull:
                                     self._add(file_path, "SONAR_MODIFY_FOR_VARIABLE",
                                               "S3256: 不应在循环体中修改迭代器/循环变量 '" +
                                               var_name + "'",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
                                     break
 
         # S1221: Method names should not differ only by case
@@ -879,7 +838,7 @@ class SonarQubeCheckerFull:
                                 self._add(file_path, "SONAR_METHOD_CASE_CONFLICT",
                                           "S1221: 方法名 '" + name + "' 与 '" +
                                           other_name + "' 仅在大小写上不同，会造成混淆",
-                                          _sq_severity("MAJOR"),
+                                          sq_severity("MAJOR"),
                                           line=decl.position.line if decl.position else 0)
                         else:
                             method_names[name_lower] = name

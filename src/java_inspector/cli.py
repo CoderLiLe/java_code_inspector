@@ -1,5 +1,6 @@
 """命令行入口 — 参数解析与执行编排"""
 import argparse
+import logging
 import os
 import sys
 
@@ -34,8 +35,23 @@ def main():
         "--workers", "-w", type=int, default=None,
         help="并行检查的线程数（默认自动检测）"
     )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true",
+        help="显示详细日志输出"
+    )
+    parser.add_argument(
+        "--quiet", "-q", action="store_true",
+        help="仅显示错误信息"
+    )
 
     args = parser.parse_args()
+
+    if args.quiet:
+        logging.basicConfig(level=logging.ERROR, format="%(levelname)s: %(message)s")
+    elif args.verbose:
+        logging.basicConfig(level=logging.DEBUG, format="%(name)s [%(levelname)s]: %(message)s")
+    else:
+        logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 
     if args.install_hook:
         install_git_hook()

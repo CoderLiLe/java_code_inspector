@@ -1,24 +1,9 @@
 """SonarQubeCheckerSix — 第六批规则"""
-"""SonarQubeCheckerSix — 第六批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,34 +16,7 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
-class SonarQubeCheckerSix:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
-
-    _METHOD_BLACKLIST = {
-        "main", "toString", "equals", "hashCode", "getClass",
-        "notify", "notifyAll", "wait", "finalize", "clone",
-    }
+class SonarQubeCheckerSix(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_bugs_six(tree, file_path, content)
@@ -80,7 +38,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_PRINT_STACK_TRACE",
                               "S1148: 不应直接调用 printStackTrace()，应使用日志框架",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S1163: Exceptions should not be thrown in finally blocks
         for path, node in tree:
@@ -92,7 +50,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(stmt)
                             self._add(file_path, "SONAR_THROW_IN_FINALLY",
                                       "S1163: finally 块中不应抛出异常",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
                             break
 
         # S1180: @SuppressWarnings should not be used for deprecation
@@ -105,7 +63,7 @@ class SonarQubeCheckerSix:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SUPPRESS_WARNING",
                                   "S1180: 应避免使用 @SuppressWarnings，应修复潜在问题",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
         # S1193: instanceof used with incompatible types (simple: comparing with final class siblings)
         for path, node in tree:
@@ -120,7 +78,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_INSTANCEOF_FINAL",
                                       "S1193: 不应使用 instanceof 检测 final 类 '" + type_name + "'",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S1195: Array designators should be on the type (String[] args not String args[])
         for i, line in enumerate(lines, 1):
@@ -128,7 +86,7 @@ class SonarQubeCheckerSix:
             if m and not re.match(r'^\s*\*', line) and not line.strip().startswith("//"):
                 self._add(file_path, "SONAR_ARRAY_DESIGNATOR_TYPE",
                           "S1195: 数组方括号应放在类型上（" + m.group(1) + "[] " + m.group(2) + "）",
-                          _sq_severity("MINOR"), line=i)
+                          sq_severity("MINOR"), line=i)
 
         # S1197: Array designators should be on the variable (only one var per line)
         for i, line in enumerate(lines, 1):
@@ -161,7 +119,7 @@ class SonarQubeCheckerSix:
                         if l:
                             self._add(file_path, "SONAR_EMPTY_NESTED_BLOCK",
                                       "S1199: 嵌套代码块不应为空",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S1202: StringBuffer should not be used; StringBuilder preferred
         for path, node in tree:
@@ -172,7 +130,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STRING_BUFFER",
                               "S1202: 应使用 StringBuilder 替代 StringBuffer（除非涉及线程安全）",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S2111 / S2232: BigDecimal(double) should not be used
         for path, node in tree:
@@ -187,7 +145,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_BIG_DECIMAL_DOUBLE",
                                       "S2111: 不应使用 BigDecimal(double)，应使用 BigDecimal(String)",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2129: String concatenation should not be in loop
         for path, node in tree:
@@ -209,7 +167,7 @@ class SonarQubeCheckerSix:
                                     l, c = self._pos(stmt)
                                     self._add(file_path, "SONAR_STRING_CONCAT_LOOP",
                                               "S2129: 循环中使用字符串拼接，建议使用 StringBuilder",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
                                     break
 
         # S2139: Exceptions should not be simply rethrown
@@ -223,7 +181,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(stmt)
                             self._add(file_path, "SONAR_EXCEPTION_RETHROW",
                                       "S2139: catch 块不应仅重新抛出异常，应记录日志或处理",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2140: Double-checked locking should not be used
         for path, node in tree:
@@ -238,7 +196,7 @@ class SonarQubeCheckerSix:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_DOUBLE_CHECK_LOCK",
                                           "S2140: 双重检查锁定模式可能不安全，应使用 volatile 或 AtomicReference",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
                                 break
 
         # S2151: Thread.start should not be called in constructor
@@ -253,7 +211,7 @@ class SonarQubeCheckerSix:
                                 l, c = self._pos(node2)
                                 self._add(file_path, "SONAR_THREAD_START_CONSTRUCTOR",
                                           "S2151: 不应在构造函数中调用 Thread.start()",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S2184: Int division cast to float
         for path, node in tree:
@@ -269,7 +227,7 @@ class SonarQubeCheckerSix:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_INT_DIV_CAST",
                                           "S2184: 整数除法后转换为浮点数，应在除法前转换避免精度损失",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S2201: Return value ignored
         for path, node in tree:
@@ -284,7 +242,7 @@ class SonarQubeCheckerSix:
                         l, c = self._pos(expr)
                         self._add(file_path, "SONAR_IGNORED_RETURN",
                                   "S2201: " + member + "() 的返回值被忽略（String 不可变）",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S2251: For loop counter should not be assigned in body
         for path, node in tree:
@@ -307,7 +265,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(stmt)
                             self._add(file_path, "SONAR_LOOP_COUNTER_ASSIGN",
                                       "S2251: 不应在循环体内修改循环计数器 '" + loop_var + "'",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2252: Float should not be used as loop counter
         for path, node in tree:
@@ -321,7 +279,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_FLOAT_LOOP_COUNTER",
                                       "S2252: 不应使用浮点数作为循环计数器，可能导致精度问题",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2293: Diamond operator should be used (Java 7+)
         for path, node in tree:
@@ -336,7 +294,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_DIAMOND_MISSING",
                                       "S2293: 应使用菱形操作符 <> 简化泛型实例创建",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S2440: Boxing/unboxing should not be used for comparison
         for path, node in tree:
@@ -353,7 +311,7 @@ class SonarQubeCheckerSix:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_BOXING_COMPARE",
                                           "S2440: 不必要的装箱/拆箱比较，建议直接比较值",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
                                 break
 
         # S3398: Private method called only from inner class
@@ -368,7 +326,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(decl)
                             self._add(file_path, "SONAR_PRIVATE_METHOD_NOT_USED",
                                       "S3398: 私有方法 '" + decl.name + "' 可能未被使用",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S3972: Conditionally executed code should be comprehensible
         for path, node in tree:
@@ -386,7 +344,7 @@ class SonarQubeCheckerSix:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_NEGATED_ELSE_IF",
                                           "S3972: else-if 条件与前一条件互为否定，应合并为 if-else",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
 
         # S3988: Parallel stream should not be used without reason
         for path, node in tree:
@@ -396,7 +354,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_PARALLEL_STREAM_SIX",
                               "S3988: 使用并行流需注意线程安全和性能开销",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Code Smell Six ====================
 
@@ -418,7 +376,7 @@ class SonarQubeCheckerSix:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_ASSIGN_IN_COND_SIX",
                                           "S1121(改): 条件表达式中不应使用赋值",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S1132: String literal should not be duplicated (covers 5+ occurrences)
         string_counts = {}
@@ -436,7 +394,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_DUPLICATE_STRING_LITERAL",
                                       "S1132: 字符串 '" + val + "' 重复出现 " + str(count) + " 次，应提取为常量",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
                             break
 
         # S1133: Deprecated code should be removed
@@ -454,7 +412,7 @@ class SonarQubeCheckerSix:
                                 if l:
                                     self._add(file_path, "SONAR_DEPRECATED_CODE",
                                               "S1133: @Deprecated 标记的代码应在下一个主版本中移除",
-                                              _sq_severity("MINOR"), line=l)
+                                              sq_severity("MINOR"), line=l)
 
         # S1150: Anonymous classes should not be too long (>20 lines)
         current_anon = []
@@ -479,7 +437,7 @@ class SonarQubeCheckerSix:
                     if anon_line_count > 20:
                         self._add(file_path, "SONAR_LONG_ANON_CLASS",
                                   "S1150: 匿名类过长（" + str(anon_line_count) + " 行），建议提取为内部类",
-                                  _sq_severity("MAJOR"), line=anon_start)
+                                  sq_severity("MAJOR"), line=anon_start)
                     in_anon = False
                     current_anon.pop() if current_anon else None
 
@@ -491,7 +449,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_TOO_MANY_THROWS",
                               "S1160: 方法声明了过多异常（" + str(len(throws)) + " 个），建议拆分",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S1171: String literal should be on LHS of equals
         for path, node in tree:
@@ -507,7 +465,7 @@ class SonarQubeCheckerSix:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_STRING_LHS_EQUALS",
                                           "S1171: 字符串字面量应放在 equals() 左侧以避免 NPE",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
                                 break
 
         # S1223: finalize() should not be protected
@@ -517,7 +475,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_FINALIZE_PROTECTED",
                               "S1223: finalize() 不应声明为 protected",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S1450: Protected fields should not be exposed
         for path, node in tree:
@@ -531,7 +489,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(decl)
                             self._add(file_path, "SONAR_PROTECTED_FIELD",
                                       "S1450: protected 字段 '" + name + "' 应改为 private 并提供 getter/setter",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S1862: Duplicate conditions in if/else-if chain
         conditions = {}
@@ -544,7 +502,7 @@ class SonarQubeCheckerSix:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_DUPLICATE_CONDITION",
                                   "S1862: if/else-if 中存在重复条件",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
                     else:
                         conditions[cond_str] = True
                 else_stmt = getattr(node, "else_statement", None)
@@ -561,7 +519,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_URL_HASHCODE",
                               "S2112: URL.hashCode() 可能执行 DNS 查询，应避免在集合中使用",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S2114: Collection.remove should not use index for List
         for path, node in tree:
@@ -576,7 +534,7 @@ class SonarQubeCheckerSix:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_LIST_REMOVE_INT",
                                       "S2114: List.remove(int) 使用索引而非对象删除，可能不是本意",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2116: String.hashCode() should not be used
         for path, node in tree:
@@ -587,7 +545,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STRING_HASHCODE",
                               "S2116: String.hashCode() 在不同 JVM 间可能不一致",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S2118: File.delete() should not be used
         for path, node in tree:
@@ -598,7 +556,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_FILE_DELETE",
                               "S2118: File.delete() 应检查返回值，建议使用 Files.delete()",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S2121: Iterator.remove() should be used instead of List.remove() in loop
         for path, node in tree:
@@ -614,7 +572,7 @@ class SonarQubeCheckerSix:
                         l, c = self._pos(stmt)
                         self._add(file_path, "SONAR_LIST_REMOVE_LOOP",
                                   "S2121: 遍历时使用 List.remove() 会导致异常，应使用 Iterator.remove()",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
                         break
 
         # S2250: String.intern() should not be used
@@ -625,7 +583,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STRING_INTERN",
                               "S2250: String.intern() 可能影响性能，应避免使用",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S2236: wait should not be called on Thread
         for path, node in tree:
@@ -635,7 +593,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_THREAD_WAIT",
                               "S2236: 不应在 Thread 实例上调用 wait()，应使用 join()",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Security Six ====================
 
@@ -659,7 +617,7 @@ class SonarQubeCheckerSix:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_CRYPTO_VARIABLE",
                                           "S2257: 不应使用非字面量字符串作为加密算法参数",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S2245: Random should not be used for security (already in fourth)
         # S4347: SecureRandom should be used with strong algorithm
@@ -681,7 +639,7 @@ class SonarQubeCheckerSix:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_WEB_MAPPING",
                                   "S4431: Web 映射应显式指定 method 属性",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
                         break
 
         # S4517: Resource should be closed (try-with-resources)
@@ -704,7 +662,7 @@ class SonarQubeCheckerSix:
                                         l, c = self._pos(stmt)
                                         self._add(file_path, "SONAR_RESOURCE_TRY_WITH",
                                                   "S4517: 应使用 try-with-resources 自动关闭资源",
-                                                  _sq_severity("MAJOR"), line=l, column=c)
+                                                  sq_severity("MAJOR"), line=l, column=c)
                                         break
 
         # S4838: JSON should be parsed securely
@@ -716,20 +674,20 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_GSON_JSON",
                               "S4838: 使用 Gson.fromJson() 时注意反序列化安全",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
                 if member == "readValue" and ("ObjectMapper" in q or "Json" in q):
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_JACKSON_JSON",
                               "S4838: 使用 Jackson 反序列化时需防范多态反序列化攻击",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S5131: XSS vulnerabilities in JSP/Spring
         for i, line in enumerate(lines, 1):
             if re.search(r'response\.getWriter\(\)\.print\(', line):
                 self._add(file_path, "SONAR_XSS_OUTPUT",
                           "S5131: 直接输出用户输入可能导致 XSS，应进行转义",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S5280: CSP should not be disabled
         for path, node in tree:
@@ -778,7 +736,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_GETCLASS_AUTH",
                               "S5860: getClass() 不应用于身份验证，应使用 instanceof",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S5876: Thread should not be created manually
         for path, node in tree:
@@ -789,7 +747,7 @@ class SonarQubeCheckerSix:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_MANUAL_THREAD",
                               "S5876: 应使用 ExecutorService 替代直接创建 Thread",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
     def _check_regex_dos(self, pattern: str, node, file_path: str):
         dangerous = [
@@ -804,5 +762,5 @@ class SonarQubeCheckerSix:
                 l, c = self._pos(node)
                 self._add(file_path, "SONAR_REGEX_DOS",
                           "S5852: 正则表达式存在 ReDoS 风险（" + pattern + "）",
-                          _sq_severity("MAJOR"), line=l, column=c)
+                          sq_severity("MAJOR"), line=l, column=c)
                 return

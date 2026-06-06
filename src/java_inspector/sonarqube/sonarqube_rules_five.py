@@ -1,25 +1,10 @@
 """SonarQubeCheckerFive — 第五批规则"""
-"""SonarQubeCheckerFive — 第五批规则"""
 import re
 from typing import List
 
 import javalang
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -32,34 +17,7 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
-class SonarQubeCheckerFive:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
-
-    _METHOD_BLACKLIST = {
-        "main", "toString", "equals", "hashCode", "getClass",
-        "notify", "notifyAll", "wait", "finalize", "clone",
-    }
+class SonarQubeCheckerFive(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_bugs_extra(tree, file_path, content)
@@ -96,7 +54,7 @@ class SonarQubeCheckerFive:
                         self._add(file_path, "SONAR_COMPLEX_EXPRESSION",
                                   "S1067: 表达式过于复杂（包含 " + str(op_count[0]) +
                                   " 个逻辑运算符），建议提取局部变量",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S1121: Assignments in sub-expressions (e.g. if (x = y()))
         for path, node in tree:
@@ -116,7 +74,7 @@ class SonarQubeCheckerFive:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_ASSIGN_IN_SUBEXPR",
                               "S1121: 不应在子表达式中使用赋值，可能是 == 之误",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
                     break
 
         # S1147: System.exit should not be called
@@ -128,7 +86,7 @@ class SonarQubeCheckerFive:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_SYSTEM_EXIT",
                               "S1147: 不应调用 System.exit()，应抛出异常或返回状态码",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S2447: NullPointerException should not be thrown
         for path, node in tree:
@@ -141,7 +99,7 @@ class SonarQubeCheckerFive:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_NPE_THROWN",
                                   "S2447: 不应显式抛出 NullPointerException，应使用 NullPointerException 检查",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S2259: Null pointer dereference (simple patterns)
         for path, node in tree:
@@ -171,7 +129,7 @@ class SonarQubeCheckerFive:
                                     self._add(file_path, "SONAR_NULL_DEREF",
                                               "S2259: 变量 '" + var_name +
                                               "' 在 null 检查之后被解引用",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
         # S3296: Pattern.compile should not be inside loop
         for path, node in tree:
@@ -191,13 +149,13 @@ class SonarQubeCheckerFive:
                             l = getattr(getattr(expr, "position", None), "line", 0)
                             self._add(file_path, "SONAR_PATTERN_LOOP",
                                       "S3296: Pattern.compile() 不应放在循环中，应提取为常量",
-                                      _sq_severity("MAJOR"), line=l)
+                                      sq_severity("MAJOR"), line=l)
                             break
                         elif member == "matches" and "Pattern" in qualifier:
                             l = getattr(getattr(expr, "position", None), "line", 0)
                             self._add(file_path, "SONAR_PATTERN_LOOP",
                                       "S3296: Pattern.matches() 不应放在循环中，应提取为常量",
-                                      _sq_severity("MAJOR"), line=l)
+                                      sq_severity("MAJOR"), line=l)
                             break
 
         # S4141: List.size() should not be used in loop condition
@@ -213,7 +171,7 @@ class SonarQubeCheckerFive:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_LOOP_SIZE",
                                       "S4141: 不应在循环条件中调用 .size()/.length()，建议提取到局部变量",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
                             break
 
     # ==================== Convention Extra ====================
@@ -236,7 +194,7 @@ class SonarQubeCheckerFive:
                             self._add(file_path, "SONAR_PUBLIC_FIELD",
                                       "S1104: 非静态字段 '" + name +
                                       "' 不应声明为 public，建议使用 private + getter",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S1144: Unused private methods
         for path, node in tree:
@@ -247,7 +205,7 @@ class SonarQubeCheckerFive:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_UNUSED_PRIVATE_METHOD",
                               "S1144: 私有方法 '" + node.name + "' 可能未使用",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S1161: @Override annotation should be used
         for path, node in tree:
@@ -266,7 +224,7 @@ class SonarQubeCheckerFive:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_OVERRIDE_MISSING",
                               "S1161: 重写方法应添加 @Override 注解",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S1170: public static final constants should be UPPER_CASE
         for path, node in tree:
@@ -280,7 +238,7 @@ class SonarQubeCheckerFive:
                             l, c = self._pos(declarator)
                             self._add(file_path, "SONAR_CONSTANT_CASE",
                                       "S1170: 常量 '" + name + "' 应使用全大写+下划线格式",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S1611: Method references should be used (lambda -> method ref)
         for path, node in tree:
@@ -296,7 +254,7 @@ class SonarQubeCheckerFive:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_METHOD_REFERENCE",
                                   "S1611: Lambda 表达式可以替换为方法引用 '" + m.group(1) + "'",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
         # S3740: Raw types should not be used
         raw_type_names = {"List", "Map", "Set", "ArrayList", "HashMap",
@@ -317,7 +275,7 @@ class SonarQubeCheckerFive:
                                 self._add(file_path, "SONAR_RAW_TYPE",
                                           "S3740: 原始类型 '" + full_name +
                                           "' 应带泛型参数（如 List<String>）",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
                                 break
 
         # S2333: Redundant modifiers (interface methods are implicitly public)
@@ -329,7 +287,7 @@ class SonarQubeCheckerFive:
                             l, c = self._pos(decl)
                             self._add(file_path, "SONAR_REDUNDANT_MODIFIER",
                                       "S2333: 接口方法隐式为 public，无需显式声明",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S1871: Switch with redundant branches (duplicate case logic)
         case_bodies = {}
@@ -350,7 +308,7 @@ class SonarQubeCheckerFive:
                                     l, c = self._pos(case)
                                     self._add(file_path, "SONAR_DUPLICATE_BRANCH",
                                               "S1871: switch 分支与 '" + ls + "' 分支逻辑重复",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
                             else:
                                 case_bodies[ls] = body_str
 
@@ -379,7 +337,7 @@ class SonarQubeCheckerFive:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_VALUE_COMPARE_V2",
                                           "S1153: 包装类型值应使用 equals() 比较",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S1157: Case-insensitive string comparisons should use locale
         for i, line in enumerate(lines, 1):
@@ -387,7 +345,7 @@ class SonarQubeCheckerFive:
                re.search(r'\.toUpperCase\(\)\.equals\(', line):
                 self._add(file_path, "SONAR_CASE_INSENSITIVE",
                           "S1157: 大小写不敏感比较应指定 Locale，或使用 equalsIgnoreCase()",
-                          _sq_severity("MINOR"), line=i)
+                          sq_severity("MINOR"), line=i)
 
         # S2437: Comparison of int with Integer
         for path, node in tree:
@@ -404,7 +362,7 @@ class SonarQubeCheckerFive:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_UNNECESSARY_UNBOXING",
                                           "S2437: 不必要的拆箱操作，可直接比较",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
                                 break
 
         # S2674: InputStream.read() return value ignored
@@ -420,7 +378,7 @@ class SonarQubeCheckerFive:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_READ_RETURN",
                                       "S2674: InputStream.read() 的返回值未使用，无法确认读取的字节数",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2675: InputStream.read(byte[]) should check return value
         for path, node in tree:
@@ -436,7 +394,7 @@ class SonarQubeCheckerFive:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_READ_RETURN_CHECK",
                                           "S2675: InputStream.read(byte[]) 的返回值应检查实际读取的字节数",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # S2598: Varargs should not be passed to non-varargs
         for path, node in tree:
@@ -455,7 +413,7 @@ class SonarQubeCheckerFive:
                                     l, c = self._pos(node)
                                     self._add(file_path, "SONAR_VARARG_WARNING",
                                               "S2598: 可变参数使用不当：Arrays.asList() 包装了单个集合",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
         # S2637: @Nullable/@NonNull contracts
         for path, node in tree:
@@ -469,7 +427,7 @@ class SonarQubeCheckerFive:
                             l, c = self._pos(param)
                             self._add(file_path, "SONAR_OPTIONAL_PARAM",
                                       "S2637: 不应将 Optional 用作方法参数",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2698: File.createTempFile should not be used
         for path, node in tree:
@@ -480,7 +438,7 @@ class SonarQubeCheckerFive:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_CREATE_TEMP_FILE",
                               "S2698: 应使用 Files.createTempFile() 替代 File.createTempFile()",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S2789: Redundant null check (after instanceof)
         for path, node in tree:
@@ -499,4 +457,4 @@ class SonarQubeCheckerFive:
                                 self._add(file_path, "SONAR_REDUNDANT_NULL_CHECK",
                                           "S2789: 重复的 null 检查，条件中已检查 '" +
                                           var_name + " != null'",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)

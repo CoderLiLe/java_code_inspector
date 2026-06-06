@@ -1,5 +1,6 @@
 """核心检查引擎 — 解析 Java 源码、运行规则、收集问题"""
 import hashlib
+import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,6 +13,8 @@ from java_inspector.models import CodeIssue, CodeMetrics, Severity
 from java_inspector.config import InspectionConfig
 from java_inspector.alibaba_rules import get_checker_classes as get_alibaba_checkers
 from java_inspector.sonarqube import get_checker_classes as get_sonar_checkers
+
+logger = logging.getLogger(__name__)
 
 
 class JavaCodeInspector:
@@ -33,9 +36,15 @@ class JavaCodeInspector:
     def _run_all_checkers(self, tree, file_path: str, content: str):
         self._init_checkers()
         for checker in self._alibaba_checkers:
-            checker.run_all(tree, file_path, content)
+            try:
+                checker.run_all(tree, file_path, content)
+            except Exception as e:
+                logger.warning("Alibaba checker %s failed for %s: %s", type(checker).__name__, file_path, e)
         for checker in self._sonar_checkers:
-            checker.run_all(tree, file_path, content)
+            try:
+                checker.run_all(tree, file_path, content)
+            except Exception as e:
+                logger.warning("SonarQube checker %s failed for %s: %s", type(checker).__name__, file_path, e)
 
     def inspect_file(self, file_path: str) -> List[CodeIssue]:
         self.issues.clear()
@@ -43,34 +52,50 @@ class JavaCodeInspector:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
-
-            tree = javalang.parse.parse(content)
-
-            self._check_unused_imports(tree, file_path, content)
-            self._check_naming_conventions(tree, file_path)
-            self._check_code_style(tree, file_path, content)
-            self._check_method_complexity(tree, file_path, content)
-            self._check_class_design(tree, file_path)
-            self._check_best_practices(tree, file_path, content)
-            self._check_empty_methods(tree, file_path)
-            self._check_exception_handling(tree, file_path, content)
-            self._check_magic_numbers(tree, file_path, content)
-            self._run_all_checkers(tree, file_path, content)
-
-            self._calculate_metrics(tree, file_path, content)
-
         except Exception as e:
-            self.issues.append(
-                CodeIssue(
-                    file_path=file_path,
-                    line=0,
-                    column=0,
-                    message=f"解析文件失败: {str(e)}",
-                    severity=Severity.ERROR,
-                    rule_id="PARSE_ERROR",
-                    category="PARSING",
-                )
-            )
+            self.issues.append(CodeIssue(
+                file_path=file_path, line=0, column=0,
+                message=f"读取文件失败: {str(e)}",
+                severity=Severity.ERROR,
+                rule_id="FILE_READ_ERROR",
+                category="PARSING",
+            ))
+            return self.issues
+
+        try:
+            tree = javalang.parse.parse(content)
+        except Exception as e:
+            self.issues.append(CodeIssue(
+                file_path=file_path, line=0, column=0,
+                message=f"解析文件失败: {str(e)}",
+                severity=Severity.ERROR,
+                rule_id="PARSE_ERROR",
+                category="PARSING",
+            ))
+            return self.issues
+
+        for check_method in [
+            self._check_unused_imports,
+            self._check_naming_conventions,
+            self._check_code_style,
+            self._check_method_complexity,
+            self._check_class_design,
+            self._check_best_practices,
+            self._check_empty_methods,
+            self._check_exception_handling,
+            self._check_magic_numbers,
+        ]:
+            try:
+                check_method(tree, file_path, content)
+            except Exception as e:
+                logger.warning("Built-in check %s failed for %s: %s", check_method.__name__, file_path, e)
+
+        self._run_all_checkers(tree, file_path, content)
+
+        try:
+            self._calculate_metrics(tree, file_path, content)
+        except Exception as e:
+            logger.warning("Metrics calculation failed for %s: %s", file_path, e)
 
         return self.issues
 
@@ -162,7 +187,7 @@ class JavaCodeInspector:
                         )
                     )
 
-    def _check_naming_conventions(self, tree, file_path: str):
+    def _check_naming_conventions(self, tree, file_path: str, content: str = ""):
         if not self.config.is_rule_enabled("naming_conventions"):
             return
 
@@ -377,7 +402,7 @@ class JavaCodeInspector:
                     )
                 )
 
-    def _check_class_design(self, tree, file_path: str):
+    def _check_class_design(self, tree, file_path: str, content: str = ""):
         if not self.config.is_rule_enabled("comments_ratio"):
             return
 
@@ -436,7 +461,7 @@ class JavaCodeInspector:
 
         self.metrics[file_path] = metrics
 
-    def _check_empty_methods(self, tree, file_path: str):
+    def _check_empty_methods(self, tree, file_path: str, content: str = ""):
         if not self.config.is_rule_enabled("empty_methods"):
             return
 
@@ -571,7 +596,7 @@ class JavaCodeInspector:
                         code_blocks[code_hash] = [(file_path, method)]
 
             except Exception as e:
-                print(f"分析文件 {file_path} 时出错: {e}")
+                logger.warning("分析文件 %s 时出错: %s", file_path, e)
 
         for code_hash, occurrences in code_blocks.items():
             if len(occurrences) > 1 and len(occurrences[0][1].split()) >= min_tokens:
@@ -616,9 +641,9 @@ class JavaCodeInspector:
                 with open(file_path, "w", encoding="utf-8") as f:
                     f.write("\n".join(lines))
 
-                print(f"已自动修复 {len(fixed_issues)} 个问题在文件 {file_path}")
+                logger.info("已自动修复 %s 个问题在文件 %s", len(fixed_issues), file_path)
 
         except Exception as e:
-            print(f"自动修复失败: {e}")
+            logger.error("自动修复失败: %s", e)
 
         return fixed_issues

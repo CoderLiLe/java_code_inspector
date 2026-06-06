@@ -1,24 +1,9 @@
 """SonarQubeCheckerNine — 第九批规则"""
-"""SonarQubeCheckerNine — 第九批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,33 +16,10 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
 def _get_base_type_name(t):
     return _get_full_type_name(t).split(".")[-1]
 
-
-class SonarQubeCheckerNine:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerNine(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_security_hotspots(tree, file_path, content)
@@ -93,7 +55,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_MISSING_AUTHORIZATION",
                                       "S4834: Web 端点缺少授权检查（@PreAuthorize 等）",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S5280: CSP should be enabled
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -109,7 +71,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_CSP_HEADER",
                                       "S5280: 建议设置 Content-Security-Policy 响应头",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S5693: Content-Type should be specified
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -121,7 +83,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_CONTENT_TYPE",
                                       "S5693: @PostMapping/@PutMapping 应指定 consumes",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S5582: Open redirect prevention
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -130,7 +92,7 @@ class SonarQubeCheckerNine:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_OPEN_REDIRECT_NINE",
                               "S5582: sendRedirect() 应验证目标 URL 避免开放重定向",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S5487: JSON injection
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -140,7 +102,7 @@ class SonarQubeCheckerNine:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_JSON_MANUAL",
                               "S5487: 应使用 JSON 库构建 JSON，避免字符串拼接",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S4830: SSL should not be disabled (additional check)
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -149,7 +111,7 @@ class SonarQubeCheckerNine:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_SSL_DISABLED_NINE",
                               "S4830: SSL/TLS 验证不应被禁用",
-                              _sq_severity("BLOCKER"), line=l, column=c)
+                              sq_severity("BLOCKER"), line=l, column=c)
 
             # S1313: Hardcoded IP (additional patterns)
             for i, line in enumerate(lines, 1):
@@ -160,15 +122,15 @@ class SonarQubeCheckerNine:
                        not ip.startswith("192.168.") and not ip.startswith("0."):
                         self._add(file_path, "SONAR_HARDCODED_IP_ADDRESS",
                                   "S1313: 不应硬编码 IP 地址 " + ip,
-                                  _sq_severity("MAJOR"), line=i)
+                                  sq_severity("MAJOR"), line=i)
 
         # S4507: SQL injection (additional checks)
         for i, line in enumerate(lines, 1):
             no_comment = re.sub(r'//.*', '', line)
-            if re.search(r'"\s*\+\s*\w+\s*\+.*(?i)(SELECT|INSERT|UPDATE|DELETE)', line):
+            if re.search(r'"\s*\+\s*\w+\s*\+.*(SELECT|INSERT|UPDATE|DELETE)', line, re.IGNORECASE):
                 self._add(file_path, "SONAR_SQL_CONCATENATION",
                           "S4507: SQL 查询不应通过字符串拼接构建",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S5332: Clear text protocols
         for i, line in enumerate(lines, 1):
@@ -176,7 +138,7 @@ class SonarQubeCheckerNine:
             if re.search(r'new\s+URL\(\s*"http://', no_comment):
                 self._add(file_path, "SONAR_CLEAR_TEXT_HTTP",
                           "S5332: 使用 http:// 而非 https:// 可能导致信息泄露",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S5445: Regex injection (additional)
         for path, node in tree:
@@ -190,7 +152,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_REGEX_INJECTION_NINE",
                                       "S5445: 使用用户输入构造正则表达式可能导致 ReDoS",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Error-Prone Nine ====================
 
@@ -217,7 +179,7 @@ class SonarQubeCheckerNine:
                                             l, c = self._pos(node)
                                             self._add(file_path, "SONAR_ARRAY_EQUALS",
                                                       "S1241: 数组应使用 Arrays.equals() 而非 equals()",
-                                                      _sq_severity("MAJOR"), line=l, column=c)
+                                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S1849: Iterator should not be assumed to have next
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -237,7 +199,7 @@ class SonarQubeCheckerNine:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_NEXT_WITHOUT_HASNEXT",
                                   "S1849: 调用 next() 前应先检查 hasNext()",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S1948: Non-serializable field in Serializable class
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -263,7 +225,7 @@ class SonarQubeCheckerNine:
                                             l, c = self._pos(decl)
                                             self._add(file_path, "SONAR_NON_SERIALIZABLE",
                                                       "S1948: Serializable 类中的非 transient 字段非序列化",
-                                                      _sq_severity("MAJOR"), line=l, column=c)
+                                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S1989: Exception should not be swallowed
             if isinstance(node, javalang_tree.CatchClause):
@@ -285,7 +247,7 @@ class SonarQubeCheckerNine:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_SWALLOWED_EXCEPTION",
                               "S1989: 异常被吞噬未记录",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S2209: Null should not be passed where Object expected
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -296,7 +258,7 @@ class SonarQubeCheckerNine:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_NULL_ARGUMENT",
                                   "S2209: 不应传递 null 字面量作为参数",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
                         break
 
             # S2232: BigDecimal should be created from String
@@ -314,7 +276,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_BIG_DECIMAL_DOUBLE_NINE",
                                       "S2232: BigDecimal 不应使用 double 构造",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2670: compareTo should not return constant
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -332,7 +294,7 @@ class SonarQubeCheckerNine:
                                         l, c = self._pos(node)
                                         self._add(file_path, "SONAR_COMPARETO_CONSTANT",
                                                   "S2670: compareTo() 不应返回常量",
-                                                  _sq_severity("MAJOR"), line=l, column=c)
+                                                  sq_severity("MAJOR"), line=l, column=c)
                                         break
 
             # S2692: indexOf should be contains (additional)
@@ -348,7 +310,7 @@ class SonarQubeCheckerNine:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_INDEXOF_CONTAINS_NINE",
                                   "S2692: indexOf() != -1 应替换为 contains()",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S2757: Wrong assignment operator (== vs =)
             if isinstance(node, javalang_tree.BinaryOperation):
@@ -362,7 +324,7 @@ class SonarQubeCheckerNine:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_WRONG_ASSIGN_OPERATOR",
                                           "S2757: 条件表达式中使用 = 而非 ==",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
             # S2924: Thread.sleep should not be used in tests
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -378,7 +340,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_SLEEP_IN_TEST",
                                       "S2924: 测试中不应使用 Thread.sleep()",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Miscellaneous ====================
 
@@ -405,12 +367,12 @@ class SonarQubeCheckerNine:
                                     l, c = self._pos(stmt)
                                     self._add(file_path, "SONAR_RETURN_BOOL_NINE",
                                               "S1126: if-else 返回布尔值应简化为 return 条件表达式",
-                                              _sq_severity("MINOR"), line=l, column=c)
+                                              sq_severity("MINOR"), line=l, column=c)
                                 elif "value=false" in then_str and "value=true" in else_str:
                                     l, c = self._pos(stmt)
                                     self._add(file_path, "SONAR_RETURN_BOOL_NINE",
                                               "S1126: if-else 返回布尔值应简化为 return !条件表达式",
-                                              _sq_severity("MINOR"), line=l, column=c)
+                                              sq_severity("MINOR"), line=l, column=c)
 
             # S1215: System.gc should not be called (already covered)
             # S1315: Logger should be private static final
@@ -428,7 +390,7 @@ class SonarQubeCheckerNine:
                                     l, c = self._pos(var)
                                     self._add(file_path, "SONAR_LOGGER_VISIBILITY",
                                               "S1315: Logger 应声明为 private",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
                         if "static" not in modifiers:
                             for var in getattr(node, "declarators", []) or []:
                                 name = getattr(var, "name", "")
@@ -436,7 +398,7 @@ class SonarQubeCheckerNine:
                                     l, c = self._pos(var)
                                     self._add(file_path, "SONAR_LOGGER_STATIC_NINE",
                                               "S1315: Logger 应声明为 static",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
             # S1258: Variable naming (additional)
             if isinstance(node, javalang_tree.VariableDeclaration):
@@ -446,7 +408,7 @@ class SonarQubeCheckerNine:
                         l, c = self._pos(decl)
                         self._add(file_path, "SONAR_VARIABLE_UPPER_CASE",
                                   "S1258: 变量名不应全大写（常量应使用 static final）",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S1319: Use interface types (already covered)
             # S1449: Locale should be used (already covered)
@@ -497,7 +459,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_DEPRECATED_WITH_DOC",
                                       "S1123: @Deprecated 注解的方法应有 @deprecated Javadoc",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
             # S1130: Throws generic exception (additional)
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -508,7 +470,7 @@ class SonarQubeCheckerNine:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_GENERIC_THROWS_NINE",
                                   "S1130: 不应抛出通用异常类型 '" + exc_name + "'",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
                         break
 
             # S1134: FIXME tag (already covered)
@@ -538,7 +500,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_FUNCTIONAL_INTERFACE",
                                       "S1165: @FunctionalInterface 应恰好包含一个抽象方法",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S1172: Unused parameter (already covered)
 
@@ -554,7 +516,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_FINALIZE_EMPTY",
                                       "S1174: finalize() 应为空或移除",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S1181: Throwable caught (already covered)
 
@@ -570,7 +532,7 @@ class SonarQubeCheckerNine:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_ENUM_SWITCH_DEFAULT",
                               "S1190: switch 缺少 default 分支",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S1193: Instanceof with final class (additional check in six)
             # S1201: Equals should handle null (additional)
@@ -583,7 +545,7 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_EQUALS_NO_NULL",
                                       "S1201: equals() 应处理 null 参数",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S128: Switch fall-through (additional)
         for i, line in enumerate(lines, 1):
@@ -609,5 +571,5 @@ class SonarQubeCheckerNine:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_FILE_HEADER",
                                       "S1451: 文件缺少许可证/版权头部注释",
-                                      _sq_severity("MINOR"), line=l)
+                                      sq_severity("MINOR"), line=l)
                         break

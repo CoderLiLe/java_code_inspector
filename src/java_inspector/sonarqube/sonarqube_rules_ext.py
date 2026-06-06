@@ -1,53 +1,12 @@
 """SonarQubeCheckerExt — 扩展检查器"""
-"""SonarQubeCheckerExt — 扩展检查器"""
 import re
 from typing import List
 
 import javalang
 from javalang import tree as javalang_tree
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
-
-class SonarQubeCheckerExt:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
-
-    _METHOD_BLACKLIST = {
-        "main", "toString", "equals", "hashCode", "getClass",
-        "notify", "notifyAll", "wait", "finalize", "clone",
-    }
+class SonarQubeCheckerExt(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_performance(tree, file_path, content)
@@ -68,7 +27,7 @@ class SonarQubeCheckerExt:
                 if not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_WRAPPER_INSTANCE",
                               "S1158: 使用 'valueOf()' 而非 'new Wrapper()' 创建包装类型，valueOf 有缓存优化",
-                              _sq_severity("MAJOR"), line=i, column=m.start())
+                              sq_severity("MAJOR"), line=i, column=m.start())
 
         # S1191: Replace legacy collections
         legacy_map = {"Vector": "ArrayList", "Hashtable": "HashMap", "StringBuffer": "StringBuilder"}
@@ -82,7 +41,7 @@ class SonarQubeCheckerExt:
                                   "Hashtable": "Hashtable 是线程安全的但性能差",
                                   "StringBuffer": "单线程环境应使用 StringBuilder"
                               }[name],
-                              _sq_severity("MAJOR"), line=i)
+                              sq_severity("MAJOR"), line=i)
 
         # S2131: Split on single char should use indexOf
         for i, line in enumerate(lines, 1):
@@ -90,7 +49,7 @@ class SonarQubeCheckerExt:
                 if not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_SPLIT_CHAR",
                               "S2131: 分割单字符字符串应使用 indexOf 或循环遍历而非 split，split 开销较大",
-                              _sq_severity("MINOR"), line=i, column=m.start())
+                              sq_severity("MINOR"), line=i, column=m.start())
 
         # S2168: Return empty collection instead of null
         for path, node in tree:
@@ -105,7 +64,7 @@ class SonarQubeCheckerExt:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_RETURN_EMPTY",
                                       "S2168: 返回集合/Map 的方法应返回空集合而非 null，避免调用者空指针",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
                             break
 
         # S3416: Logger naming convention
@@ -119,7 +78,7 @@ class SonarQubeCheckerExt:
                             pass
                     self._add(file_path, "SONAR_LOGGER_NAMING",
                               "S3416: 日志变量应命名为 'logger' 或 'LOG'，保持命名一致性",
-                              _sq_severity("MINOR"), line=i, column=m.start())
+                              sq_severity("MINOR"), line=i, column=m.start())
 
         # S3421: File separator should be File.separator
         for i, line in enumerate(lines, 1):
@@ -128,7 +87,7 @@ class SonarQubeCheckerExt:
                 if "File.separator" not in line and "FileSystem" not in line:
                     self._add(file_path, "SONAR_FILE_SEPARATOR",
                               "S3421: 应使用 'File.separator' 或 '/' 替代硬编码的文件分隔符 '\\\\'",
-                              _sq_severity("MINOR"), line=i, column=m.start())
+                              sq_severity("MINOR"), line=i, column=m.start())
 
         # S3610: Empty array should be `new Type[0]`
         for i, line in enumerate(lines, 1):
@@ -136,14 +95,14 @@ class SonarQubeCheckerExt:
                 if not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_EMPTY_ARRAY",
                               "S3610: 创建零长度数组时使用 'new Type[0]' 优于空列表的 toArray 方法",
-                              _sq_severity("MINOR"), line=i, column=m.start())
+                              sq_severity("MINOR"), line=i, column=m.start())
 
         # S3457: String.format with wrong placeholder count
         for i, line in enumerate(lines, 1):
             for m in re.finditer(r'String\.format\s*\(\s*"[^"]*%[sd]",\s*\)', line):
                 self._add(file_path, "SONAR_FORMAT_ARGS",
                           "S3457: String.format 格式字符串包含占位符但未提供对应参数",
-                          _sq_severity("MAJOR"), line=i, column=m.start())
+                          sq_severity("MAJOR"), line=i, column=m.start())
 
         # S1711: StringBuffer in single-thread
         for i, line in enumerate(lines, 1):
@@ -152,7 +111,7 @@ class SonarQubeCheckerExt:
                not re.search(r"synchronized|lock|volatile|Thread", line):
                 self._add(file_path, "SONAR_STRING_BUFFER",
                           "S1711: StringBuffer 是线程安全的但性能差，单线程环境应使用 StringBuilder",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S3626: Jump statements in loop (break/continue with label)
         for i, line in enumerate(lines, 1):
@@ -160,7 +119,7 @@ class SonarQubeCheckerExt:
                 if not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_LABELED_JUMP",
                               "S3626: 循环中使用带标签的 break/continue 降低了代码可读性，应重构",
-                              _sq_severity("MINOR"), line=i, column=m.start())
+                              sq_severity("MINOR"), line=i, column=m.start())
 
         # S3242: Use base type for parameters (if method uses only base type methods)
         for path, node in tree:
@@ -182,7 +141,7 @@ class SonarQubeCheckerExt:
                             l, c = self._pos(param)
                             self._add(file_path, "SONAR_BASE_TYPE_PARAM",
                                       "S3242: 使用接口类型 'List' 替代实现类 '" + pt.name + "' 作为参数类型",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S3986: Date format pattern variable
         for i, line in enumerate(lines, 1):
@@ -190,7 +149,7 @@ class SonarQubeCheckerExt:
                 if "SimpleDateFormat" in line or "DateTimeFormatter" in line:
                     self._add(file_path, "SONAR_DATE_FORMAT",
                               "S3986: 日期格式字符串应定义为常量，避免重复创建",
-                              _sq_severity("MINOR"), line=i, column=m.start())
+                              sq_severity("MINOR"), line=i, column=m.start())
 
         # S4165: Hardcoded numeric literals (magic numbers) - basic
         for i, line in enumerate(lines, 1):
@@ -200,7 +159,7 @@ class SonarQubeCheckerExt:
                     if not re.search(r"//.*", line):
                         self._add(file_path, "SONAR_MAGIC_NUMBER",
                                   "S4165: 建议将硬编码的数值 '" + val + "' 定义为命名常量",
-                                  _sq_severity("MINOR"), line=i, column=m.start())
+                                  sq_severity("MINOR"), line=i, column=m.start())
 
         # S1602: Unnecessary boxing
         for i, line in enumerate(lines, 1):
@@ -211,7 +170,7 @@ class SonarQubeCheckerExt:
                     if not re.search(r"//.*", line):
                         self._add(file_path, "SONAR_UNNECESSARY_BOXING",
                                   "S1602: 自动装箱不需要显式调用 'Integer.valueOf()'，可直接赋值",
-                                  _sq_severity("MINOR"), line=i, column=m.start())
+                                  sq_severity("MINOR"), line=i, column=m.start())
 
     # ==================== Reliability ====================
     def check_reliability(self, tree, file_path: str, content: str):
@@ -230,7 +189,7 @@ class SonarQubeCheckerExt:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_GENERAL_EXCEPTION",
                               "S112: 不应抛出通用异常类型 'Exception'，应使用更具体的异常类型",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S1130: Throws declaration should be specific
         for path, node in tree:
@@ -242,7 +201,7 @@ class SonarQubeCheckerExt:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_GENERIC_THROWS",
                                   "S1130: 方法的 throws 声明应使用具体异常类型而非通用 '" + tn + "'",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S1143: Return/throw from finally block
         for path, node in tree:
@@ -258,7 +217,7 @@ class SonarQubeCheckerExt:
                                   isinstance(stmt, javalang_tree.ReturnStatement) else \
                                   "S1143: finally 块中不应抛出异常，会覆盖 try 中的异常"
                             self._add(file_path, rule, msg,
-                                      _sq_severity("CRITICAL"), line=l)
+                                      sq_severity("CRITICAL"), line=l)
 
         # S1181: Throwable should not be caught
         for path, node in tree:
@@ -273,7 +232,7 @@ class SonarQubeCheckerExt:
                                 l = catch.position.line if catch.position else 0
                                 self._add(file_path, "SONAR_CATCH_THROWABLE",
                                           "S1181: 不应捕获 'Throwable'，它包含 'Error' 等不可恢复的异常",
-                                          _sq_severity("MAJOR"), line=l)
+                                          sq_severity("MAJOR"), line=l)
 
         # S1168: Return empty collection instead of null
         for path, node in tree:
@@ -287,7 +246,7 @@ class SonarQubeCheckerExt:
                         l = stmt.position.line if stmt.position else 0
                         self._add(file_path, "SONAR_NULL_COLLECTION",
                                   "S1168: 返回集合类型的方法应返回空集合而非 null",
-                                  _sq_severity("MAJOR"), line=l)
+                                  sq_severity("MAJOR"), line=l)
 
         # S1172: Unused method parameters
         for path, node in tree:
@@ -333,7 +292,7 @@ class SonarQubeCheckerExt:
                         l, c = self._pos(param)
                         self._add(file_path, "SONAR_UNUSED_PARAMETER",
                                   "S1172: 参数 '" + pname + "' 在方法 '" + node.name + "' 中未使用，应移除",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S1192: String literals should not be duplicated
         string_counts = {}
@@ -347,7 +306,7 @@ class SonarQubeCheckerExt:
             if len(positions) >= 3:
                 self._add(file_path, "SONAR_DUPLICATE_STRING",
                           "S1192: 字符串 " + s + " 重复了 " + str(len(positions)) + " 次，应定义为常量",
-                          _sq_severity("MINOR"), line=positions[0])
+                          sq_severity("MINOR"), line=positions[0])
 
         # S1656: Variable assigned to itself
         for i, line in enumerate(lines, 1):
@@ -357,7 +316,7 @@ class SonarQubeCheckerExt:
                    not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_SELF_ASSIGNMENT",
                               "S1656: 变量 '" + m.group(1) + "' 赋值给了自身，可能是逻辑错误",
-                              _sq_severity("MAJOR"), line=i, column=m.start())
+                              sq_severity("MAJOR"), line=i, column=m.start())
 
         # S128: Switch fall-through without comment
         for path, node in tree:
@@ -375,7 +334,7 @@ class SonarQubeCheckerExt:
                                 l = case.position.line if case.position else 0
                                 self._add(file_path, "SONAR_FALL_THROUGH",
                                           "S128: switch case 存在穿透（fall-through），应添加 'break' 或注释说明意图",
-                                          _sq_severity("MAJOR"), line=l)
+                                          sq_severity("MAJOR"), line=l)
 
         # S1317: StringBuilder variable name
         for i, line in enumerate(lines, 1):
@@ -386,7 +345,7 @@ class SonarQubeCheckerExt:
                 if name not in ("sb", "builder", "stringBuilder", "buffer", "strBuf", "strBuilder"):
                     self._add(file_path, "SONAR_SB_NAMING",
                               "S1317: StringBuilder 变量推荐命名为 'sb' 或 'builder'，当前名为 '" + name + "'",
-                              _sq_severity("MINOR"), line=i, column=m.start())
+                              sq_severity("MINOR"), line=i, column=m.start())
 
         # S1337: Unnecessary unboxing
         for i, line in enumerate(lines, 1):
@@ -395,7 +354,7 @@ class SonarQubeCheckerExt:
                 if "(" in before and "int" not in before:
                     self._add(file_path, "SONAR_UNBOXING",
                               "S1337: 不必要的显式拆箱，可直接用于需要基本类型的上下文中",
-                              _sq_severity("MINOR"), line=i, column=m.start())
+                              sq_severity("MINOR"), line=i, column=m.start())
 
         # S1141: Nested try blocks
         for path, node in tree:
@@ -408,7 +367,7 @@ class SonarQubeCheckerExt:
                         l = stmt.position.line if stmt.position else 0
                         self._add(file_path, "SONAR_NESTED_TRY",
                                   "S1141: 嵌套的 try 块降低了可读性，应提取为独立方法",
-                                  _sq_severity("MINOR"), line=l)
+                                  sq_severity("MINOR"), line=l)
 
         # S1201: equals/hashCode/toString consistency check
         for path, node in tree:
@@ -424,7 +383,7 @@ class SonarQubeCheckerExt:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_EQUALS_TOSTRING",
                               "S1201: 重写了 equals/hashCode 的类应同时重写 toString 方法",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
         # S135: Loop with too many break/continue statements
         for path, node in tree:
@@ -436,7 +395,7 @@ class SonarQubeCheckerExt:
                     l = node.position.line if node.position else 0
                     self._add(file_path, "SONAR_LOOP_JUMPS",
                               "S135: 循环包含 " + str(count) + " 个跳转语句（break/continue），应重构降低复杂度",
-                              _sq_severity("MINOR"), line=l)
+                              sq_severity("MINOR"), line=l)
 
         # S1697: Short-circuit logic
         for i, line in enumerate(lines, 1):
@@ -444,7 +403,7 @@ class SonarQubeCheckerExt:
                 if not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_SHORT_CIRCUIT",
                               "S1697: 条件表达式应为短路的 && 或 ||，避免空指针",
-                              _sq_severity("MAJOR"), line=i, column=m.start())
+                              sq_severity("MAJOR"), line=i, column=m.start())
 
         # S1860: Synchronized on String/Integer
         for path, node in tree:
@@ -455,7 +414,7 @@ class SonarQubeCheckerExt:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SYNC_IMMUTABLE",
                                   "S1860: 对 String/Integer 等不可变对象加锁是危险的，因为 JVM 可能重用这些对象",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
                         break
 
         # S1220: Serial version UID
@@ -493,7 +452,7 @@ class SonarQubeCheckerExt:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_SERIAL_VERSION_UID",
                               "S1220: 实现 Serializable 的类 '" + node.name + "' 应定义 serialVersionUID",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Design ====================
     def check_design(self, tree, file_path: str, content: str):
@@ -515,7 +474,7 @@ class SonarQubeCheckerExt:
                 l, c = self._pos(node)
                 self._add(file_path, "SONAR_EMPTY_BLOCK",
                           "S108: 空代码块应添加注释说明或移除",
-                          _sq_severity("MAJOR"), line=l, column=c)
+                          sq_severity("MAJOR"), line=l, column=c)
 
         # S110: Check inheritance depth (> 6)
         class_parents = {}
@@ -535,7 +494,7 @@ class SonarQubeCheckerExt:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_DEEP_INHERITANCE",
                                   "S110: 类继承深度超过 6 层，应减少继承层次或使用组合替代继承",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # S1126: Return of boolean expression
         for path, node in tree:
@@ -553,7 +512,7 @@ class SonarQubeCheckerExt:
                                 l, c = self._pos(stmt)
                                 self._add(file_path, "SONAR_RETURN_BOOL",
                                           "S1126: 'if-true-return-true' 可简化为直接 'return condition'",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
 
         # S1149: Synchronized class (Vector, Hashtable)
         for i, line in enumerate(lines, 1):
@@ -565,7 +524,7 @@ class SonarQubeCheckerExt:
                                   "Hashtable": "优先使用 HashMap",
                                   "StringBuffer": "单线程用 StringBuilder"
                               }[m.group(1)],
-                              _sq_severity("MINOR"), line=i, column=m.start())
+                              sq_severity("MINOR"), line=i, column=m.start())
 
         # S1151: Switch case too many lines
         for path, node in tree:
@@ -576,7 +535,7 @@ class SonarQubeCheckerExt:
                         l = case.position.line if case.position else 0
                         self._add(file_path, "SONAR_LONG_CASE",
                                   "S1151: case 分支包含 " + str(len(stmts)) + " 行语句，应提取为独立方法",
-                                  _sq_severity("MINOR"), line=l)
+                                  sq_severity("MINOR"), line=l)
 
         # S1185: Overriding method does nothing but call super
         for path, node in tree:
@@ -591,7 +550,7 @@ class SonarQubeCheckerExt:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_USELESS_OVERRIDE",
                                       "S1185: 重写方法仅调用了 'super." + node.name + "()'，可删除",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
         # S1186: Empty methods
         for path, node in tree:
@@ -608,7 +567,7 @@ class SonarQubeCheckerExt:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_EMPTY_METHOD",
                               "S1186: 方法 '" + node.name + "' 为空，应添加实现或标记为抽象",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S1190: Enum switch should handle all cases
         for path, node in tree:
@@ -628,7 +587,7 @@ class SonarQubeCheckerExt:
                                 if str(expr.qualifier) == n2.name:
                                     self._add(file_path, "SONAR_ENUM_SWITCH",
                                               "S1190: 枚举类型的 switch 应包含 default 分支或处理所有枚举常量",
-                                              _sq_severity("MAJOR"), line=l)
+                                              sq_severity("MAJOR"), line=l)
                                     break
 
         # S1206: equals/hashCode/toString ordering
@@ -646,7 +605,7 @@ class SonarQubeCheckerExt:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_METHOD_ORDER",
                                   "S1206: equals() 和 hashCode() 方法的定义应相邻，便于代码审查",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
         # S1214: Constants in interfaces
         for path, node in tree:
@@ -656,7 +615,7 @@ class SonarQubeCheckerExt:
                         l, c = self._pos(member.declarators[0] if member.declarators else member)
                         self._add(file_path, "SONAR_INTERFACE_CONSTANT",
                                   "S1214: 接口中不应定义常量，应使用枚举或常量类",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
         # S1448: Too many methods in class (> 20)
         for path, node in tree:
@@ -670,7 +629,7 @@ class SonarQubeCheckerExt:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_TOO_MANY_METHODS",
                               "S1448: 类 '" + node.name + "' 包含 " + str(method_count) + " 个方法（超过 20），应考虑拆分",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
         # S1301: switch with 2 or fewer cases should be if
         for path, node in tree:
@@ -681,7 +640,7 @@ class SonarQubeCheckerExt:
                     l = node.position.line if node.position else 0
                     self._add(file_path, "SONAR_SWITCH_TO_IF",
                               "S1301: switch 仅有 " + str(case_count) + " 个 case，应使用 if-else 替代",
-                              _sq_severity("MINOR"), line=l)
+                              sq_severity("MINOR"), line=l)
 
         # S1188: Anonymous class too long
         for path, node in tree:
@@ -693,7 +652,7 @@ class SonarQubeCheckerExt:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_LONG_ANON_CLASS",
                                   "S1188: 匿名内部类超过 20 行，应转换为内部类或 lambda",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
     # ==================== Extended Bugs ====================
     def check_bugs_ext(self, tree, file_path: str, content: str):
@@ -715,7 +674,7 @@ class SonarQubeCheckerExt:
                         l = catch.position.line if catch.position else 0
                         self._add(file_path, "SONAR_EMPTY_CATCH_EXT",
                                   "S108: 空的 catch 块应包含注释说明为何忽略异常，或记录日志",
-                                  _sq_severity("MAJOR"), line=l)
+                                  sq_severity("MAJOR"), line=l)
                     elif len(stmts) == 1:
                         s = str(stmts[0])
                         if "//" not in s and "/*" not in s and \
@@ -723,7 +682,7 @@ class SonarQubeCheckerExt:
                             l = catch.position.line if catch.position else 0
                             self._add(file_path, "SONAR_EMPTY_CATCH_EXT",
                                       "S108: catch 块为空或只包含注释，应记录异常",
-                                      _sq_severity("MAJOR"), line=l)
+                                      sq_severity("MAJOR"), line=l)
 
         # S1123: @Deprecated without @deprecated Javadoc tag
         for i, line in enumerate(lines, 1):
@@ -736,7 +695,7 @@ class SonarQubeCheckerExt:
                 if not has_javadoc_tag:
                     self._add(file_path, "SONAR_DEPRECATED_DOC",
                               "S1123: '@Deprecated' 注解应配合 Javadoc '@deprecated' 标记说明原因和替代方案",
-                              _sq_severity("MAJOR"), line=i)
+                              sq_severity("MAJOR"), line=i)
 
         # S1166: Exception caught but not logged
         for path, node in tree:
@@ -761,7 +720,7 @@ class SonarQubeCheckerExt:
                         l = catch.position.line if catch.position else 0
                         self._add(file_path, "SONAR_EXCEPTION_LOG",
                                   "S1166: 捕获异常后应记录日志或重新抛出，不应忽略",
-                                  _sq_severity("MAJOR"), line=l)
+                                  sq_severity("MAJOR"), line=l)
 
         # S1226: Parameters should not be reassigned
         for path, node in tree:
@@ -778,21 +737,21 @@ class SonarQubeCheckerExt:
                             l, c = self._pos(param)
                             self._add(file_path, "SONAR_PARAM_ASSIGN",
                                       "S1226: 方法参数 '" + pname + "' 被重新赋值，应使用局部变量",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2757: Assignment in condition (= instead of ==)
         for i, line in enumerate(lines, 1):
             for m in re.finditer(r"\bif\s*\(\s*\w+\s*=\s*\w+", line):
                 self._add(file_path, "SONAR_ASSIGN_IN_COND",
                           "S2757: 条件表达式中使用了 '='（赋值），应为 '=='（比较）",
-                          _sq_severity("MAJOR"), line=i, column=m.start())
+                          sq_severity("MAJOR"), line=i, column=m.start())
 
         # S2589: Boolean expression not updated (always true/false)
         for i, line in enumerate(lines, 1):
             for m in re.finditer(r"\bif\s*\(\s*(true|false)\s*\)", line):
                 self._add(file_path, "SONAR_ALWAYS_BOOL",
                           "S2589: 条件 '" + m.group(1) + "' 是常量，表达式永远不会改变，应移除或修正",
-                          _sq_severity("MAJOR"), line=i, column=m.start())
+                          sq_severity("MAJOR"), line=i, column=m.start())
 
         # S2772: SerialVersionUID should be private static final long
         for path, node in tree:
@@ -804,7 +763,7 @@ class SonarQubeCheckerExt:
                             l, c = self._pos(decl)
                             self._add(file_path, "SONAR_SERIAL_VERSION",
                                       "S2772: 'serialVersionUID' 必须声明为 'private static final long'",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
         # S2761: Double prefix increment
         for i, line in enumerate(lines, 1):
@@ -812,7 +771,7 @@ class SonarQubeCheckerExt:
                 if not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_DOUBLE_NOT",
                               "S2761: 双重复合取反运算符 '!!' 可简化为直接使用表达式",
-                              _sq_severity("MAJOR"), line=i, column=m.start())
+                              sq_severity("MAJOR"), line=i, column=m.start())
 
         # S2925: Thread.sleep should not be used in tests
         for i, line in enumerate(lines, 1):
@@ -820,7 +779,7 @@ class SonarQubeCheckerExt:
                not re.search(r"//.*", line):
                 self._add(file_path, "SONAR_THREAD_SLEEP",
                           "S2925: 'Thread.sleep()' 不应用于测试或生产代码，考虑使用 awaitility 或定时器",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
     # ==================== Extended Security ====================
     def check_security_ext(self, tree, file_path: str, content: str):
@@ -838,7 +797,7 @@ class SonarQubeCheckerExt:
                     if not re.search(r"//.*", line):
                         self._add(file_path, "SONAR_HARDCODED_IP",
                                   "S1313: 硬编码的 IP 地址 '" + ip + "'，应从配置文件中获取",
-                                  _sq_severity("CRITICAL"), line=i, column=m.start())
+                                  sq_severity("CRITICAL"), line=i, column=m.start())
 
         # S2068: Hardcoded credentials (password-like variable names)
         for i, line in enumerate(lines, 1):
@@ -848,7 +807,7 @@ class SonarQubeCheckerExt:
                 if not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_HARDCODED_CREDENTIAL",
                               "S2068: 硬编码的凭证信息，应存储在安全的凭证管理服务中",
-                              _sq_severity("BLOCKER"), line=i, column=m.start())
+                              sq_severity("BLOCKER"), line=i, column=m.start())
 
         # S2077: SQL injection in PreparedStatement
         for i, line in enumerate(lines, 1):
@@ -858,7 +817,7 @@ class SonarQubeCheckerExt:
                    not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_PREP_STMT_INJECTION",
                               "S2077: PreparedStatement 中拼接 SQL 参数仍存在注入风险，应使用 '?' 占位符",
-                              _sq_severity("CRITICAL"), line=i, column=m.start())
+                              sq_severity("CRITICAL"), line=i, column=m.start())
 
         # S2076: Command injection via ProcessBuilder (already in base)
 
@@ -869,14 +828,14 @@ class SonarQubeCheckerExt:
                    not re.search(r"Context\.SECURITY_AUTHENTICATION", line):
                     self._add(file_path, "SONAR_LDAP_ANONYMOUS",
                               "S2229: LDAP 匿名绑定存在安全风险，应配置认证信息",
-                              _sq_severity("CRITICAL"), line=i)
+                              sq_severity("CRITICAL"), line=i)
 
         # S2583: Conditionally executed blocks (dead code)
         for i, line in enumerate(lines, 1):
             for m in re.finditer(r"\bif\s*\(\s*(false|null)\s*\)", line):
                 self._add(file_path, "SONAR_DEAD_CODE",
                           "S2583: 条件始终为 false 的代码块不可达，应移除死代码",
-                          _sq_severity("MAJOR"), line=i, column=m.start())
+                          sq_severity("MAJOR"), line=i, column=m.start())
 
         # S2638: Spring/Hibernate injection
         for i, line in enumerate(lines, 1):
@@ -892,7 +851,7 @@ class SonarQubeCheckerExt:
                re.search(r"password|passwd|credential|token", line.lower()):
                 self._add(file_path, "SONAR_BASIC_AUTH",
                           "S2647: 基础认证信息应使用安全的传输方式（HTTPS），避免明文传输",
-                          _sq_severity("CRITICAL"), line=i)
+                          sq_severity("CRITICAL"), line=i)
 
         # S3330: Cookie without HttpOnly
         for i, line in enumerate(lines, 1):
@@ -903,7 +862,7 @@ class SonarQubeCheckerExt:
                 else:
                     self._add(file_path, "SONAR_COOKIE_HTTPONLY",
                               "S3330: Cookie 应设置 HttpOnly 属性以防止 XSS 攻击窃取 Cookie",
-                              _sq_severity("CRITICAL"), line=i)
+                              sq_severity("CRITICAL"), line=i)
 
         # S3649: SQL injection in JPA
         for i, line in enumerate(lines, 1):
@@ -914,7 +873,7 @@ class SonarQubeCheckerExt:
                     if not re.search(r"//.*", line):
                         self._add(file_path, "SONAR_JPA_INJECTION",
                                   "S3649: JPA 查询中拼接用户输入可能造成 JPQL/SQL 注入",
-                                  _sq_severity("BLOCKER"), line=i, column=m.start())
+                                  sq_severity("BLOCKER"), line=i, column=m.start())
 
         # S4784: ReDoS via regex injection (already in base)
 
@@ -925,7 +884,7 @@ class SonarQubeCheckerExt:
                not re.search(r"//.*", line):
                 self._add(file_path, "SONAR_INSECURE_RANDOM",
                           "S5160: 'java.util.Random' 在安全敏感场景不可预测，应使用 'java.security.SecureRandom'",
-                          _sq_severity("CRITICAL"), line=i)
+                          sq_severity("CRITICAL"), line=i)
 
         # S5341: MAC (Message Authentication Code) should not be predictable
         for i, line in enumerate(lines, 1):
@@ -933,7 +892,7 @@ class SonarQubeCheckerExt:
                 if not re.search(r"//.*", line):
                     self._add(file_path, "SONAR_WEAK_MAC",
                               "S5341: 弱 MAC 算法 '" + m.group(1) + "' 应使用 HmacSHA256 或更强算法",
-                              _sq_severity("CRITICAL"), line=i, column=m.start())
+                              sq_severity("CRITICAL"), line=i, column=m.start())
 
         # S5542: XML processing (XXE prevention)
         for i, line in enumerate(lines, 1):
@@ -948,4 +907,4 @@ class SonarQubeCheckerExt:
                     if not re.search(r"//.*", line):
                         self._add(file_path, "SONAR_XXE_EXT",
                                   "S5542: XML 解析器应正确配置以禁用外部实体注入（XXE）",
-                                  _sq_severity("BLOCKER"), line=i)
+                                  sq_severity("BLOCKER"), line=i)

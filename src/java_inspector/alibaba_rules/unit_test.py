@@ -4,6 +4,7 @@ from typing import List
 
 import javalang
 
+from java_inspector.models import Severity
 from java_inspector.alibaba_rules.base import BaseChecker
 
 

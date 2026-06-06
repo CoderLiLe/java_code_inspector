@@ -1,24 +1,9 @@
 """SonarQubeCheckerFifteen — 第十五批规则"""
-"""SonarQubeCheckerFifteen — 第十五批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,29 +16,7 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
-class SonarQubeCheckerFifteen:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerFifteen(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_http_web_extra(tree, file_path, content)
@@ -75,7 +38,7 @@ class SonarQubeCheckerFifteen:
                re.search(r'\.getWriter\(\)\.print\s*\(', line):
                 self._add(file_path, "SONAR_XSS_DIRECT_OUTPUT",
                           "S5122: 直接输出用户输入可能导致 XSS",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
         # S2092: Cache control headers
         for i, line in enumerate(lines, 1):
@@ -84,25 +47,25 @@ class SonarQubeCheckerFifteen:
                 if not re.search(r'no-store|no-cache|must-revalidate', line):
                     self._add(file_path, "SONAR_CACHE_CONTROL",
                               "S2092: 敏感响应应设置 Cache-Control: no-store",
-                              _sq_severity("MAJOR"), line=i)
+                              sq_severity("MAJOR"), line=i)
 
             if re.search(r'\.setHeader\s*\(\s*"Strict-Transport-Security', line):
                 if not re.search(r'max-age\s*=\s*\d+', line):
                     self._add(file_path, "SONAR_HSTS_HEADER",
                               "S2092: Strict-Transport-Security 应设置 max-age",
-                              _sq_severity("MAJOR"), line=i)
+                              sq_severity("MAJOR"), line=i)
 
             if re.search(r'\.setHeader\s*\(\s*"X-Content-Type-Options', line) and \
                "nosniff" not in line:
                 self._add(file_path, "SONAR_CONTENT_TYPE_OPTIONS",
                           "S2092: X-Content-Type-Options 应设为 nosniff",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
             if re.search(r'\.setHeader\s*\(\s*"X-Frame-Options', line) and \
                "DENY" not in line and "SAMEORIGIN" not in line:
                 self._add(file_path, "SONAR_FRAME_OPTIONS",
                           "S2092: X-Frame-Options 应设为 DENY 或 SAMEORIGIN",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
     # ==================== JDBC / JPA ====================
 
@@ -127,7 +90,7 @@ class SonarQubeCheckerFifteen:
                                     l, c = self._pos(arg)
                                     self._add(file_path, "SONAR_JDBC_HARDCODED",
                                               "S2068: JDBC 连接字符串不应硬编码",
-                                              _sq_severity("BLOCKER"), line=l, column=c)
+                                              sq_severity("BLOCKER"), line=l, column=c)
                                     break
 
             # Batch operations without transaction
@@ -143,19 +106,19 @@ class SonarQubeCheckerFifteen:
             if re.search(r'DriverManager\.getConnection\s*\(\s*"[^"]*(user|password|passwd|pwd)=[^"]*"', line, re.I):
                 self._add(file_path, "SONAR_CONNECTION_CREDENTIALS",
                           "S2115: 连接 URL 中包含凭据信息",
-                          _sq_severity("BLOCKER"), line=i)
+                          sq_severity("BLOCKER"), line=i)
 
             # PreparedStatement with string concatenation
             if re.search(r'PreparedStatement\s+\w+\s*=\s*\w+\.prepareStatement\s*\(\s*"[^"]*"\s*\+', line):
                 self._add(file_path, "SONAR_SQL_CONCAT_PREPARED",
                           "S2096: PreparedStatement 不应使用字符串拼接构造 SQL",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
             # JPA @Transactional on non-public method
             if re.search(r'@Transactional\s*\n\s*(protected|private)\s', content):
                 self._add(file_path, "SONAR_TRANSACTIONAL_VISIBILITY",
                           "S4601: @Transactional 不应标注在非 public 方法上",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
                 break
 
     # ==================== Testing Extra ====================
@@ -176,7 +139,7 @@ class SonarQubeCheckerFifteen:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_TEST_EXPECTED_V2",
                                           "S5778: 应使用 assertThrows() 替代 @Test(expected=...)",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
         # Test method without assertion
         for path, node in tree:
@@ -194,7 +157,7 @@ class SonarQubeCheckerFifteen:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_TEST_WITHOUT_ASSERTION_V2",
                                       "S2699: 测试方法应包含断言语句",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # @Disabled without comment
             if isinstance(node, javalang_tree.Annotation):
@@ -206,7 +169,7 @@ class SonarQubeCheckerFifteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_DISABLED_WITHOUT_COMMENT",
                                   "S1608: @Disabled/@Ignore 应标注具体原因",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S2698: Test assertion inside lambda
             # S3415: Assertion arguments order
@@ -227,7 +190,7 @@ class SonarQubeCheckerFifteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_DEPRECATED_JAVADOC",
                               "S1123: @Deprecated 应提供 Javadoc 说明替代方案",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S1141: Nested try-catch (already partial)
 

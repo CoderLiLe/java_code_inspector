@@ -1,24 +1,9 @@
 """SonarQubeCheckerTen — 第十批规则"""
-"""SonarQubeCheckerTen — 第十批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,33 +16,10 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
 def _get_base_type_name(t):
     return _get_full_type_name(t).split(".")[-1]
 
-
-class SonarQubeCheckerTen:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerTen(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_convention_ten(tree, file_path, content)
@@ -112,7 +74,7 @@ class SonarQubeCheckerTen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_FUNCTIONAL_INTERFACE_MISSING",
                                   "S1609: 单抽象方法接口应标注 @FunctionalInterface",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S1610: Abstract class naming
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -123,7 +85,7 @@ class SonarQubeCheckerTen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_ABSTRACT_NAMING",
                                   "S1610: 抽象类名应以 Abstract 或 Base 开头",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S1700: Field name should not match method name (already in base)
 
@@ -136,7 +98,7 @@ class SonarQubeCheckerTen:
                         l, c = self._pos(var)
                         self._add(file_path, "SONAR_FIELD_NAMING_CONVENTION",
                                   "S1725: 字段名不应包含前缀/后缀下划线或 m_/s_",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S1939: Enum constants should be compared with ==
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -160,7 +122,7 @@ class SonarQubeCheckerTen:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_NESTED_CLASS_NAME",
                                       "S1943: 内部类名与外层类名重名",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2003: Super should be called at end of method
             # S2094: Interface should not be empty (already in full)
@@ -185,7 +147,7 @@ class SonarQubeCheckerTen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_CLASS_NAME_LENGTH",
                               "S2176: 类名过长（" + str(len(name)) + " 个字符）",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
             # S2187: Test class (already in eight)
             # S2188: Test method naming
@@ -201,7 +163,7 @@ class SonarQubeCheckerTen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_TEST_METHOD_NAMING",
                                   "S2188: 测试方法名应以 test/should 开头或包含 Test",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S2325: Private method (already in base)
 
@@ -214,7 +176,7 @@ class SonarQubeCheckerTen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_EXCESSIVE_CHAINING",
                               "S2388: 过长的链式调用应简化",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
             # S2438: Inner class should be static
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -231,7 +193,7 @@ class SonarQubeCheckerTen:
                                 l, c = self._pos(decl)
                                 self._add(file_path, "SONAR_INNER_CLASS_STATIC",
                                           "S2438: 内部类 '" + name + "' 应声明为 static",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
             # S2445: Synchronize on field (already in base)
 
@@ -246,7 +208,7 @@ class SonarQubeCheckerTen:
                             l, c = self._pos(var)
                             self._add(file_path, "SONAR_STATIC_FIELD_NAMING",
                                       "S3008: static 字段名应遵循命名约定",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
     # ==================== Design Ten ====================
 
@@ -371,7 +333,7 @@ class SonarQubeCheckerTen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SELF_ASSIGNMENT_TEN",
                                   "S1909: 变量赋值给自身是冗余的",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S1940: Boolean inversion (already in eight)
 
@@ -386,7 +348,7 @@ class SonarQubeCheckerTen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_GENERIC_VARIABLE_TYPE",
                                   "S1941: 变量类型过于通用，应使用更具体的类型",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S1994: For loop increment (already in full)
 
@@ -482,7 +444,7 @@ class SonarQubeCheckerTen:
                                             l, c = self._pos(var)
                                             self._add(file_path, "SONAR_SERVLET_STATIC_FIELD",
                                                       "S2226: Servlet 类中的 static 字段可能导致线程安全问题",
-                                                      _sq_severity("MAJOR"), line=l, column=c)
+                                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2230: compareTo equals (already in seven)
 
@@ -656,7 +618,7 @@ class SonarQubeCheckerTen:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_IMMUTABLE_COLLECTION",
                                       "S5863: 不可变集合应使用 List.of() 等工厂方法",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
             # S5867: toString on array (already in seven)
             # S5868: Null check redundant
@@ -682,7 +644,7 @@ class SonarQubeCheckerTen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STREAM_FINDFIRST",
                               "S5971: 有序流中 findFirst() 可替换为 findAny() 提升性能",
-                              _sq_severity("INFO"), line=i)
+                              sq_severity("INFO"), line=i)
                     break
 
             # S5973: HTTP response headers
@@ -709,7 +671,7 @@ class SonarQubeCheckerTen:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_VAR_INFERENCE",
                                           "S6019: 可使用 var 替代显式类型声明",
-                                          _sq_severity("INFO"), line=l, column=c)
+                                          sq_severity("INFO"), line=l, column=c)
 
             # S6021: Pattern instanceof (already in eight)
             # S6023: Switch arrow (already in eight)
@@ -748,7 +710,7 @@ class SonarQubeCheckerTen:
                                     l, c = self._pos(var)
                                     self._add(file_path, "SONAR_MUTABLE_CONSTANT",
                                               "S2386: 常量 '" + name + "' 引用可变对象",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Robustness Ten ====================
 
@@ -770,7 +732,7 @@ class SonarQubeCheckerTen:
                         self._add(file_path, "SONAR_MODIFIER_ORDER",
                                   "S1124: 修饰符顺序不符合规范（推荐: " +
                                   "public protected private abstract static final ...）",
-                                  _sq_severity("MINOR"), line=i)
+                                  sq_severity("MINOR"), line=i)
                         break
                 else:
                     continue
@@ -840,7 +802,7 @@ class SonarQubeCheckerTen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_CLASS_CAST_THROWN",
                                   "S1194: 不应显式抛出 ClassCastException",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S1195: Array designator (already in six)
             # S1197: Array designator variable (already in six)

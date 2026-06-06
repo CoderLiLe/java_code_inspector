@@ -1,24 +1,9 @@
 """SonarQubeCheckerEight — 第八批规则"""
-"""SonarQubeCheckerEight — 第八批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,33 +16,10 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
 def _get_base_type_name(t):
     return _get_full_type_name(t).split(".")[-1]
 
-
-class SonarQubeCheckerEight:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerEight(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_spring_framework(tree, file_path)
@@ -92,7 +54,7 @@ class SonarQubeCheckerEight:
                                             l, c = self._pos(var)
                                             self._add(file_path, "SONAR_FIELD_INJECTION",
                                                       "S4605: 推荐使用构造器注入替代字段注入 @Autowired",
-                                                      _sq_severity("MAJOR"), line=l, column=c)
+                                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S4602: @RequestMapping should be in @Controller
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -110,7 +72,7 @@ class SonarQubeCheckerEight:
                                     l, c = self._pos(decl)
                                     self._add(file_path, "SONAR_SPRING_MAPPING_WITHOUT_CONTROLLER",
                                               "S4602: 含 @RequestMapping 的类应标注 @Controller",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
             # S4621: Spring MVC annotation should specify method
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -125,7 +87,7 @@ class SonarQubeCheckerEight:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_SPRING_METHOD_HTTP_METHOD",
                                       "S4621: @RequestMapping 应指定 HTTP method（GET/POST 等）",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
             # S4682: @RequestMapping on class level should be preferred
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -136,7 +98,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SPRING_SPECIFIC_MAPPING",
                                   "S4682: 建议使用 @RequestMapping 及 method 属性替代特定注解",
-                                  _sq_severity("INFO"), line=l, column=c)
+                                  sq_severity("INFO"), line=l, column=c)
 
             # S4719: Spring Data repository should be interface
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -147,7 +109,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SPRING_REPOSITORY",
                                   "S4719: Spring Data Repository 应定义为接口而非类",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S4635: @RequestParam should have default value
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -159,7 +121,7 @@ class SonarQubeCheckerEight:
                             l, c = self._pos(param)
                             self._add(file_path, "SONAR_REQUEST_PARAM_DEFAULT",
                                       "S4635: @RequestParam 应指定 defaultValue 或 required=false",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S4700: Spring SQL query should use parameter binding
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -169,7 +131,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SPRING_QUERY",
                                   "S4700: @Query 应使用参数绑定避免 SQL 注入",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S4604: @Autowired should be on constructor
             if isinstance(node, javalang_tree.FieldDeclaration):
@@ -182,7 +144,7 @@ class SonarQubeCheckerEight:
                                 l, c = self._pos(var)
                                 self._add(file_path, "SONAR_AUTOWIRED_FIELD",
                                           "S4604: @Autowired 应使用构造器注入而非字段注入",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Java Features (8+) ====================
 
@@ -209,7 +171,7 @@ class SonarQubeCheckerEight:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_LAMBDA_METHOD_REF",
                                       "S5958: Lambda 可替换为方法引用",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
                             break
 
             # S5960: Comparator should be lambda
@@ -226,7 +188,7 @@ class SonarQubeCheckerEight:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_COMPARATOR_LAMBDA",
                                           "S5960: Comparator 应使用 Lambda 表达式替代匿名类",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
 
             # S3864: Stream peek for debugging only (already in fourth but let's add more)
             # S6092: Optional should not be used as field
@@ -241,7 +203,7 @@ class SonarQubeCheckerEight:
                             l, c = self._pos(var)
                             self._add(file_path, "SONAR_OPTIONAL_FIELD",
                                       "S6092: Optional 不应作为字段类型",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S6093: Lambda parameter type should be inferred
             if isinstance(node, javalang_tree.LambdaExpression):
@@ -253,7 +215,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_LAMBDA_PARAM_TYPE",
                                   "S6093: Lambda 参数类型可省略（类型推断）",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
                         break
 
             # S5994: Record should be used for simple data carriers
@@ -279,7 +241,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_TEXT_BLOCK",
                                   "S5996: 多行字符串应使用 Java 13+ Text Block",
-                                  _sq_severity("MINOR"), line=i)
+                                  sq_severity("MINOR"), line=i)
                         break
 
             # S6000: Sealed class hierarchy
@@ -327,7 +289,7 @@ class SonarQubeCheckerEight:
                             l, c = self._pos(node2)
                             self._add(file_path, "SONAR_SWITCH_ARROW",
                                       "S6023: Switch 表达式可使用箭头语法简化",
-                                      _sq_severity("INFO"), line=l, column=c)
+                                      sq_severity("INFO"), line=l, column=c)
                         break
 
             # S6025: Record accessor
@@ -346,7 +308,7 @@ class SonarQubeCheckerEight:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_WILDCARD_RETURN",
                                       "S1452: 返回值类型不应使用通配符泛型",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
                             break
 
             # S1710: Annotation should be used consistently
@@ -360,7 +322,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_DUPLICATE_ANNOTATION",
                                   "S1710: 重复的 @" + name + " 注解",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Testing Patterns ====================
 
@@ -381,7 +343,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_JUNIT5_VISIBILITY",
                                   "S5778: JUnit 5 测试方法不应声明为 public",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S5786: JUnit test class should not be public
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -397,7 +359,7 @@ class SonarQubeCheckerEight:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_JUNIT5_CLASS_VISIBILITY",
                               "S5786: JUnit 5 测试类不应声明为 public",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
             # S5810: JUnit 5 @Test should be used
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -441,7 +403,7 @@ class SonarQubeCheckerEight:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_TEST_DISPLAY_NAME",
                               "S5857: JUnit 5 测试应使用 @DisplayName",
-                              _sq_severity("INFO"), line=l, column=c)
+                              sq_severity("INFO"), line=l, column=c)
 
             # S5854: JUnit 5 method visibility
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -455,7 +417,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_JUNIT5_LIFECYCLE_VISIBILITY",
                                   "S5854: JUnit 5 生命周期方法不应声明为 public",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S2187: Test class should have test methods
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -478,7 +440,7 @@ class SonarQubeCheckerEight:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_TEST_CLASS_WITHOUT_TEST",
                               "S2187: 测试类应包含至少一个 @Test 方法",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Redundancy ====================
 
@@ -494,7 +456,7 @@ class SonarQubeCheckerEight:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_EMPTY_MARKER_INTERFACE",
                               "S114: 空接口应替换为 @FunctionalInterface 或 @Annotation",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S1185: Useless override (delegating to super)
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -512,7 +474,7 @@ class SonarQubeCheckerEight:
                                     l, c = self._pos(node)
                                     self._add(file_path, "SONAR_USELESS_OVERRIDE_EIGHT",
                                               "S1185: 重写方法仅调用 super 实现，可移除",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
             # S1206: Method order (equals before hashCode)
             prev_method = ""
@@ -523,7 +485,7 @@ class SonarQubeCheckerEight:
                             l, c = self._pos(decl)
                             self._add(file_path, "SONAR_HASHCODE_BEFORE_EQUALS",
                                       "S1206: hashCode() 应放在 equals() 之后",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
                         prev_method = decl.name
 
             # S1259: Class name should match file name
@@ -535,7 +497,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_CLASS_NAME_CASE",
                                   "S1259: 类名大小写应与文件名一致",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S1701: Diamond operator should be used (Java 7+) - additional check
             if isinstance(node, javalang_tree.ClassCreator):
@@ -550,7 +512,7 @@ class SonarQubeCheckerEight:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_DIAMOND_GENERIC",
                                       "S1701: 应使用菱形操作符 <> 简化泛型实例创建",
-                                      _sq_severity("MINOR"), line=l, column=c)
+                                      sq_severity("MINOR"), line=l, column=c)
 
             # S1751: Loop with only break in body
             if isinstance(node, javalang_tree.ForStatement):
@@ -562,7 +524,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_LOOP_ONLY_BREAK",
                                   "S1751: 循环体仅含 break 语句，可移除",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S1820: Too many fields in class
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -574,7 +536,7 @@ class SonarQubeCheckerEight:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_TOO_MANY_FIELDS",
                               "S1820: 类包含过多字段（" + str(field_count) + " 个），建议拆分",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S1927: instanceof of non-coercible types
             if isinstance(node, javalang_tree.BinaryOperation):
@@ -606,13 +568,13 @@ class SonarQubeCheckerEight:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_BOOLEAN_INVERSION",
                                           "S1940: 不应使用 == false 做判断，应直接取反",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
                             elif isinstance(right, javalang_tree.Literal) and \
                                  str(getattr(right, "value", "")) == "false":
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_BOOLEAN_INVERSION",
                                           "S1940: 不应使用 == false 做判断，应直接取反",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
 
             # S1941: Variable type should be more specific
             # S2057: Serialization should not be used
@@ -624,7 +586,7 @@ class SonarQubeCheckerEight:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SERIALIZABLE",
                                   "S2057: 实现 Serializable 需谨慎处理 serialVersionUID",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S2059: Serialization with non-transient fields
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -647,5 +609,5 @@ class SonarQubeCheckerEight:
                                                     self._add(file_path,
                                                               "SONAR_SERIALIZABLE_FIELD",
                                                               "S2059: Serializable 类中非 transient 的 IO/Net 字段",
-                                                              _sq_severity("MAJOR"),
+                                                              sq_severity("MAJOR"),
                                                               line=l, column=c)

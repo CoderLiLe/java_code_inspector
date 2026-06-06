@@ -1,8 +1,11 @@
 """配置管理 — 加载合并 JSON 配置与默认值，支持环境变量覆盖"""
 import copy
 import json
+import logging
 import os
 from typing import Dict
+
+logger = logging.getLogger(__name__)
 
 
 _ENV_PREFIX = "JAVA_INSPECTOR_"
@@ -120,7 +123,7 @@ class InspectionConfig:
                 user_config = json.load(f)
                 self._deep_update(self.config, user_config)
         except Exception as e:
-            print(f"加载配置文件失败: {e}")
+            logger.warning("加载配置文件失败: %s", e)
 
     @staticmethod
     def _deep_update(base: Dict, update: Dict):

@@ -1,24 +1,9 @@
 """SonarQubeCheckerThirteen — 第十三批规则"""
-"""SonarQubeCheckerThirteen — 第十三批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,33 +16,10 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
 def _get_base_type_name(t):
     return _get_full_type_name(t).split(".")[-1]
 
-
-class SonarQubeCheckerThirteen:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerThirteen(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_framework_complete(tree, file_path, content)
@@ -84,17 +46,17 @@ class SonarQubeCheckerThirteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_JEE_RESOURCE",
                               "S1441: 建议优先使用 CDI (@Inject) 替代 EJB 注解",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
                 if short_name in ("Entity", "Table", "Column", "Id", "GeneratedValue"):
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_JPA_ENTITY",
                               "S4871: JPA 实体应重写 equals 和 hashCode",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
                 if short_name == "Named":
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_NAMED_CDI",
                               "S4738: 建议使用 @Inject 限定符而非 @Named",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
                 if short_name == "Value":
                     element = getattr(node, "element", None)
                     if element and hasattr(element, "value") and isinstance(getattr(element, "value", None), str):
@@ -103,7 +65,7 @@ class SonarQubeCheckerThirteen:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_SPRING_VALUE",
                                       "S4682: @Value 应从配置属性获取值，而非硬编码",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             if isinstance(node, javalang_tree.ClassCreator):
                 type_node = getattr(node, "type", None)
@@ -113,7 +75,7 @@ class SonarQubeCheckerThirteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_DIRECT_CONNECTION",
                               "S1475: 应使用连接池而非直接创建连接",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             if isinstance(node, javalang_tree.MethodInvocation):
                 member = getattr(node, "member", "")
@@ -126,14 +88,14 @@ class SonarQubeCheckerThirteen:
                                 l, c = self._pos(arg)
                                 self._add(file_path, "SONAR_HEADER_INJECTION",
                                           "S4492: HTTP 响应头中可能包含 CRLF 注入",
-                                          _sq_severity("CRITICAL"), line=l, column=c)
+                                          sq_severity("CRITICAL"), line=l, column=c)
                                 break
 
         for i, line in enumerate(lines, 1):
             if re.search(r'@RequestMapping\s*\(\s*["\']/actuator', line):
                 self._add(file_path, "SONAR_ACTUATOR_EXPOSED",
                           "S4719: Spring Actuator 端点暴露可能存在安全风险",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
     # ==================== Final Edge Cases ====================
 
@@ -157,7 +119,7 @@ class SonarQubeCheckerThirteen:
                                 l, c = self._pos(case)
                                 self._add(file_path, "SONAR_SWITCH_FALLTHROUGH",
                                           "S1219: switch case 缺少 break，可能非故意穿透",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
             if isinstance(node, javalang_tree.CatchClause):
                 param = getattr(node, "parameter", None)
@@ -169,7 +131,7 @@ class SonarQubeCheckerThirteen:
                         l, c = self._pos(param)
                         self._add(file_path, "SONAR_UNUSED_CATCH_PARAM",
                                   "S1291: 捕获的异常参数未使用",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             if isinstance(node, javalang_tree.Annotation):
                 short_name = self._short_ann_name(node)
@@ -177,7 +139,7 @@ class SonarQubeCheckerThirteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_SUPPRESS_WARNING",
                               "S1309: 应避免使用 @SuppressWarnings",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
             if isinstance(node, javalang_tree.BinaryOperation):
                 op = getattr(node, "operator", "")
@@ -188,7 +150,7 @@ class SonarQubeCheckerThirteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_NULL_INSTANCEOF",
                                   "S1310: instanceof 对 null 检查多余",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             if isinstance(node, javalang_tree.MethodDeclaration):
                 name = getattr(node, "name", "")
@@ -196,14 +158,14 @@ class SonarQubeCheckerThirteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_FINALIZE",
                               "S1274: 不应重写 finalize 方法",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
                 modifiers = node.modifiers or []
                 if "synchronized" in modifiers:
                     if name in ("compareTo", "clone"):
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_SYNC_OVERRIDE",
                                   "S1282: synchronized 方法应使用同步块替代",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             if isinstance(node, javalang_tree.MethodInvocation):
                 member = getattr(node, "member", "")
@@ -211,7 +173,7 @@ class SonarQubeCheckerThirteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_PRINT_STACKTRACE",
                               "S1789: 应使用日志框架记录异常而非 printStackTrace",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Java 12+ Features ====================
 
@@ -243,7 +205,7 @@ class SonarQubeCheckerThirteen:
                                             l, c = self._pos(node)
                                             self._add(file_path, "SONAR_PATTERN_INSTANCEOF",
                                                       "S6201: 可使用模式匹配 instanceof 简化",
-                                                      _sq_severity("MINOR"), line=l, column=c)
+                                                      sq_severity("MINOR"), line=l, column=c)
                                             break
 
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -258,7 +220,7 @@ class SonarQubeCheckerThirteen:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_RECORD_ELIGIBLE",
                                       "S6207: 简单数据类可考虑改为 record",
-                                      _sq_severity("INFO"), line=l, column=c)
+                                      sq_severity("INFO"), line=l, column=c)
                             break
 
             if isinstance(node, javalang_tree.ClassCreator):
@@ -268,13 +230,13 @@ class SonarQubeCheckerThirteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_RECORD_STRING_TEMPLATE",
                               "S6211: 考虑使用 String Templates 替代 StringBuilder",
-                              _sq_severity("INFO"), line=l, column=c)
+                              sq_severity("INFO"), line=l, column=c)
 
         for i, line in enumerate(lines, 1):
             if re.search(r'\b(sealed)\s+class\b', line) and not re.search(r'\bpermits\b', line):
                 self._add(file_path, "SONAR_SEALED_PERMITS",
                           "S6222: sealed 类应使用 permits 声明许可子类",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
 
             if re.search(r'\bswitch\s*\([^)]*\)\s*\{[^}]*case\s+null\s*:', line):
                 pass
@@ -298,7 +260,7 @@ class SonarQubeCheckerThirteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_TOARRAY_TYPED",
                                   "S1725: Collection.toArray() 应使用带类型参数的形式",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
                 if member in ("addHeader", "setHeader"):
                     pass
@@ -311,7 +273,7 @@ class SonarQubeCheckerThirteen:
                         l, c = self._pos(decl)
                         self._add(file_path, "SONAR_ENUM_TOSTRING",
                                   "S1744: 枚举不应重写 toString",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             if isinstance(node, javalang_tree.ClassCreator):
                 type_node = getattr(node, "type", None)
@@ -323,7 +285,7 @@ class SonarQubeCheckerThirteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_PRIMITIVE_WRAPPER",
                               "S1778: 应使用 valueOf() 而非 new Boolean() 等构造器",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             if isinstance(node, javalang_tree.BinaryOperation):
                 op = getattr(node, "operator", "")
@@ -340,7 +302,7 @@ class SonarQubeCheckerThirteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_REF_EQUALS",
                                   "S1775: 字符串比较应使用 equals() 而非 ==",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         for i, line in enumerate(lines, 1):
             if re.search(r'\.toArray\(\)', line) and not re.search(r'\.toArray\(new', line):

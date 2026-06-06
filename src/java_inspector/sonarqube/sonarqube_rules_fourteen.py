@@ -1,24 +1,9 @@
 """SonarQubeCheckerFourteen — 第十四批规则"""
-"""SonarQubeCheckerFourteen — 第十四批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,33 +16,10 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
 def _get_base_type_name(t):
     return _get_full_type_name(t).split(".")[-1]
 
-
-class SonarQubeCheckerFourteen:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerFourteen(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_security_extra(tree, file_path, content)
@@ -87,7 +49,7 @@ class SonarQubeCheckerFourteen:
                             l, c = self._pos(node)
                             self._add(file_path, "SONAR_VOLATILE_COLLECTION",
                                       "S3077: volatile 不能保证集合操作的原子性",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2168: Mutable objects as lock targets
             if isinstance(node, javalang_tree.SynchronizedStatement):
@@ -110,7 +72,7 @@ class SonarQubeCheckerFourteen:
                             l, c = self._pos(inv)
                             self._add(file_path, "SONAR_CTOR_OVERRIDABLE",
                                       "S2174: 构造函数中调用可重写方法可能导致错误行为",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2159: Silly equality (comparing different types)
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -132,7 +94,7 @@ class SonarQubeCheckerFourteen:
                not re.search(r'_\d', line):
                 self._add(file_path, "SONAR_UNDERSCORE_LITERAL",
                           "S2148: 长数字字面量应使用下划线分隔提高可读性",
-                          _sq_severity("MINOR"), line=i)
+                          sq_severity("MINOR"), line=i)
                 break
 
         # S4425: JAXB XXE
@@ -172,7 +134,7 @@ class SonarQubeCheckerFourteen:
                             l, c = self._pos(decl)
                             self._add(file_path, "SONAR_INNER_SERIALIZABLE",
                                       "S2441: 外部类可序列化时应使内部类为 static",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2130: readResolve / writeReplace
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -188,7 +150,7 @@ class SonarQubeCheckerFourteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_READ_OBJECT_WITHOUT_RESOLVE",
                                   "S2130: readObject 应搭配 readResolve 确保单例安全",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S2156: Final class with protected member
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -199,7 +161,7 @@ class SonarQubeCheckerFourteen:
                                 l, c = self._pos(decl)
                                 self._add(file_path, "SONAR_FINAL_PROTECTED",
                                           "S2156: final 类中的 protected 成员应改为 private",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Math Edge Cases ====================
 
@@ -220,7 +182,7 @@ class SonarQubeCheckerFourteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_BIGDECIMAL_ROUNDING",
                                   "S2164: BigDecimal.divide() 应指定舍入模式",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S2159: Double equals comparison
             if isinstance(node, javalang_tree.BinaryOperation):
@@ -238,7 +200,7 @@ class SonarQubeCheckerFourteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_FLOAT_COMPARE_V2",
                                   "S2159: 浮点数不应使用 == 或 != 比较",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S2160: Equivalent equals
             if isinstance(node, javalang_tree.IfStatement):
@@ -258,7 +220,7 @@ class SonarQubeCheckerFourteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_COMPARABLE_WITHOUT_COMPARETO",
                                   "S2182: 实现 Comparable 应实现 compareTo",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Convention Extra ====================
 
@@ -277,7 +239,7 @@ class SonarQubeCheckerFourteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_EXCEPTION_CLASS_NAMING",
                                   "S2166: 异常类应使用 Exception 后缀命名",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S2151: Unused local variable (catch blocks)
             if isinstance(node, javalang_tree.CatchClause):
@@ -291,7 +253,7 @@ class SonarQubeCheckerFourteen:
                             l, c = self._pos(lv)
                             self._add(file_path, "SONAR_UNUSED_LOCAL_CATCH",
                                       "S2151: catch 块中声明的局部变量未使用",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2094: Empty marker interface
             if isinstance(node, javalang_tree.InterfaceDeclaration):
@@ -301,7 +263,7 @@ class SonarQubeCheckerFourteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_EMPTY_MARKER_INTERFACE_V2",
                               "S2094: 空接口应使用注解替代",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
             # S2320: Type parameter shadowing
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -316,7 +278,7 @@ class SonarQubeCheckerFourteen:
                                     l, c = self._pos(decl)
                                     self._add(file_path, "SONAR_TYPE_PARAM_SHADOW",
                                               "S2320: 类型参数与外层类类型参数同名",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
             # S3577: Test class naming
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -330,7 +292,7 @@ class SonarQubeCheckerFourteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_TEST_CLASS_NAMING",
                                   "S3577: 测试类名应以 Test 结尾",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
         # Import wildcard
         for path, node in tree:
@@ -339,7 +301,7 @@ class SonarQubeCheckerFourteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_IMPORT_WILDCARD",
                               "S1128: 应避免使用通配符导入",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
                     break
 
         # S3578: Test method naming
@@ -353,7 +315,7 @@ class SonarQubeCheckerFourteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_TEST_METHOD_NAMING_V2",
                                   "S3578: 测试方法名应以小写字母开头",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
     # ==================== Error-Prone Extra ====================
 
@@ -378,7 +340,7 @@ class SonarQubeCheckerFourteen:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_INFINITE_RECURSION",
                                   "S2196: 方法递归调用自身可能导致无限递归",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S2171: Negating non-boolean
             if isinstance(node, javalang_tree.BinaryOperation):
@@ -410,7 +372,7 @@ class SonarQubeCheckerFourteen:
                             l, c = self._pos(stmt)
                             self._add(file_path, "SONAR_SWALLOW_RE_THROW",
                                       "S2139: 捕获后重新抛出的异常应包含原始异常信息",
-                                      _sq_severity("MAJOR"), line=l, column=c)
+                                      sq_severity("MAJOR"), line=l, column=c)
 
             # S2222: Lock without unlock (check via content)
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -425,7 +387,7 @@ class SonarQubeCheckerFourteen:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_ASSIGN_IN_COND_V2",
                               "S1854: 条件表达式中不应使用赋值",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S3959: Stream consumed check (additional via content)
             if isinstance(node, javalang_tree.MethodInvocation):

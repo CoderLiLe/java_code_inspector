@@ -1,24 +1,9 @@
 """SonarQubeCheckerEleven — 第十一批规则"""
-"""SonarQubeCheckerEleven — 第十一批规则"""
 import re
 from typing import List
 
 from javalang import tree as javalang_tree
-
-from java_inspector.models import CodeIssue, Severity
-from java_inspector.config import InspectionConfig
-
-
-def _sq_severity(sonar_sev: str) -> Severity:
-    mapping = {
-        "BLOCKER": Severity.ERROR,
-        "CRITICAL": Severity.ERROR,
-        "MAJOR": Severity.WARNING,
-        "MINOR": Severity.INFO,
-        "INFO": Severity.INFO,
-    }
-    return mapping.get(sonar_sev, Severity.WARNING)
-
+from java_inspector.sonarqube.base import BaseSonarChecker, sq_severity
 
 def _get_full_type_name(t):
     if t is None:
@@ -31,33 +16,10 @@ def _get_full_type_name(t):
             return name + "." + sub_name
     return name
 
-
 def _get_base_type_name(t):
     return _get_full_type_name(t).split(".")[-1]
 
-
-class SonarQubeCheckerEleven:
-    def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
-        self.config = config
-        self.issues = issues
-
-    @staticmethod
-    def _pos(node):
-        if node is not None and hasattr(node, "position") and node.position:
-            return node.position.line, node.position.column
-        return 0, 0
-
-    def _add(self, file_path, rule_id, message, severity=Severity.WARNING, line=0, column=0, fix_suggestion=""):
-        self.issues.append(CodeIssue(
-            file_path=file_path,
-            line=line,
-            column=column,
-            message=f"【SonarQube】{message}",
-            severity=severity,
-            rule_id=rule_id,
-            category="SONARQUBE",
-            fix_suggestion=fix_suggestion,
-        ))
+class SonarQubeCheckerEleven(BaseSonarChecker):
 
     def run_all(self, tree, file_path: str, content: str):
         self.check_advanced_features(tree, file_path, content)
@@ -82,7 +44,7 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_COMPLETABLE_FUTURE_GETNOW",
                               "S4471: CompletableFuture.getNow() 应检查返回值",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S4348: CompletableFuture should not be ignored
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -92,14 +54,14 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_COMPLETABLE_FUTURE_ASYNC",
                               "S4348: 异步 CompletableFuture 应合理处理异常",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S6204: Stream.toList should be used
             for i, line in enumerate(lines, 1):
                 if '.collect(Collectors.toList())' in line:
                     self._add(file_path, "SONAR_STREAM_TO_LIST",
                               "S6204: Stream.collect(Collectors.toList()) 可替换为 Stream.toList()",
-                              _sq_severity("MINOR"), line=i)
+                              sq_severity("MINOR"), line=i)
 
             # S6207: Stream.filter then findAny
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -108,7 +70,7 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STREAM_FINDANY_FILTER",
                               "S6207: 使用 filter().findAny() 前应考虑流是否有序",
-                              _sq_severity("INFO"), line=l, column=c)
+                              sq_severity("INFO"), line=l, column=c)
 
             # S6213: Stream.flatMap should not be used with empty strea
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -117,7 +79,7 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STREAM_FLATMAP",
                               "S6213: flatMap 应确保内部流非空",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
             # S3824: Optional.orElseGet for costly defaults (already in base)
             # S3824 already present in base, skip
@@ -129,7 +91,7 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_OPTIONAL_IS_PRESENT",
                               "S6208: Optional.isPresent() 可替换为 isEmpty() (Java 11+)",
-                              _sq_severity("MINOR"), line=l, column=c)
+                              sq_severity("MINOR"), line=l, column=c)
 
             # S6214: Optional.map for null check
             if isinstance(node, javalang_tree.IfStatement):
@@ -145,7 +107,7 @@ class SonarQubeCheckerEleven:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_OPTIONAL_MAP_NULL",
                                           "S6214: Optional.get() null 检查可替换为 Optional.map()",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
 
             # S2122: ScheduledExecutorService should be used (already in fourth)
 
@@ -158,7 +120,7 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STREAM_CLOSE",
                               "S6296: IO Stream / Path 流应使用 try-with-resources 关闭",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S6016: Structured concurrency
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -167,7 +129,7 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_STRUCTURED_CONCURRENCY",
                               "S6016: 结构化并发应正确管理作用域",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S6206: Switch with pattern matching
             if isinstance(node, javalang_tree.SwitchStatement):
@@ -187,7 +149,7 @@ class SonarQubeCheckerEleven:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_RECORD_METHOD",
                                           "S6104: Record 类无需显式 equals/hashCode",
-                                          _sq_severity("MINOR"), line=l, column=c)
+                                          sq_severity("MINOR"), line=l, column=c)
                                 break
 
             # S5876: Thread should not be instantiated directly (already in six)
@@ -204,7 +166,7 @@ class SonarQubeCheckerEleven:
             if "\\u" in line and '//' in line:
                 self._add(file_path, "SONAR_UNICODE_COMMENT",
                           "S5997: 注释中的 Unicode 转义序列可能造成误解",
-                          _sq_severity("MINOR"), line=i)
+                          sq_severity("MINOR"), line=i)
 
     # ==================== Complete Testing Patterns ====================
 
@@ -222,7 +184,7 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_ASSERT_FAIL",
                               "S5785: 应使用 assertThrows 替代 try-catch-fail 模式",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S5776: JUnit 5 @Tag should be used
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -252,7 +214,7 @@ class SonarQubeCheckerEleven:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_NESTED_CLASS_NOT",
                                   "S5788: 测试类可使用 @Nested 组织",
-                                  _sq_severity("INFO"), line=l, column=c)
+                                  sq_severity("INFO"), line=l, column=c)
 
             # S5803: Mockito spy should be used carefully
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -261,7 +223,7 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_MOCKITO_SPY_FINAL",
                               "S5803: Mockito.spy() 对 final 类可能无效",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S5805: Mockito unnecessary stubbing
             if isinstance(node, javalang_tree.StatementExpression):
@@ -272,7 +234,7 @@ class SonarQubeCheckerEleven:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_MOCKITO_UNNECESSARY_STUB",
                                   "S5805: Mockito.when() 应确保该桩被使用",
-                                  _sq_severity("MINOR"), line=l, column=c)
+                                  sq_severity("MINOR"), line=l, column=c)
 
             # S5810: JUnit 5 @Test vs JUnit 4
             if isinstance(node, javalang_tree.MethodDeclaration):
@@ -301,7 +263,7 @@ class SonarQubeCheckerEleven:
                                 l, c = self._pos(node)
                                 self._add(file_path, "SONAR_NON_DETERMINISTIC_TEST",
                                           "S6068: 测试方法应避免非确定性行为",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
             # S1725: Test fixture naming (already in ten)
 
@@ -309,7 +271,7 @@ class SonarQubeCheckerEleven:
             if re.search(r'@Mock\s+', line) and '@InjectMocks' not in lines:
                 self._add(file_path, "SONAR_MOCKITO_FIELD",
                           "S5806: Mockito @Mock 应配合 @InjectMocks 使用",
-                          _sq_severity("MINOR"), line=i)
+                          sq_severity("MINOR"), line=i)
 
     # ==================== More Concurrency ====================
 
@@ -338,7 +300,7 @@ class SonarQubeCheckerEleven:
                                     l, c = self._pos(var)
                                     self._add(file_path, "SONAR_VOLATILE_ARRAY",
                                               "S3077: volatile 数组仅保证了引用的可见性",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
 
             # S2440: Boxing comparison (already in six)
 
@@ -353,7 +315,7 @@ class SonarQubeCheckerEleven:
                                 l, c = self._pos(var)
                                 self._add(file_path, "SONAR_PACKAGE_PRIVATE_FIELD",
                                           "S2885: 多线程环境中包私有字段可能导致可见性问题",
-                                          _sq_severity("MAJOR"), line=l, column=c)
+                                          sq_severity("MAJOR"), line=l, column=c)
 
             # S3078: Volatile field in double-checked locking
             if isinstance(node, javalang_tree.ClassDeclaration):
@@ -374,7 +336,7 @@ class SonarQubeCheckerEleven:
                                     l, c = self._pos(node)
                                     self._add(file_path, "SONAR_VOLATILE_DCL",
                                               "S3078: volatile 字段不应作为同步锁对象",
-                                              _sq_severity("MAJOR"), line=l, column=c)
+                                              sq_severity("MAJOR"), line=l, column=c)
                                     break
 
             # S1217: Thread.run (already in base)
@@ -390,7 +352,7 @@ class SonarQubeCheckerEleven:
                         l, c = self._pos(node)
                         self._add(file_path, "SONAR_CLASS_SYNC",
                                   "S2442: 类级同步应使用专用的锁对象",
-                                  _sq_severity("MAJOR"), line=l, column=c)
+                                  sq_severity("MAJOR"), line=l, column=c)
 
             # S4349: ExecutorService shutdown
             if isinstance(node, javalang_tree.MethodInvocation):
@@ -400,14 +362,14 @@ class SonarQubeCheckerEleven:
                     l, c = self._pos(node)
                     self._add(file_path, "SONAR_EXECUTOR_CREATED",
                               "S4349: 创建的 ExecutorService 应在适当时候关闭",
-                              _sq_severity("MAJOR"), line=l, column=c)
+                              sq_severity("MAJOR"), line=l, column=c)
 
             # S5164: ThreadLocal should be removed
             for i, line in enumerate(lines, 1):
                 if re.search(r'\bThreadLocal\b.*\.set\(', line):
                     self._add(file_path, "SONAR_THREADLOCAL_SET",
                               "S5164: ThreadLocal 值使用后应调用 remove() 清理",
-                              _sq_severity("MAJOR"), line=i)
+                              sq_severity("MAJOR"), line=i)
 
             # S2122: ScheduledExecutorService (already in fourth)
             # S2274: TimeUnit.sleep (already in base)
@@ -424,4 +386,4 @@ class SonarQubeCheckerEleven:
                'static' not in (lines[i-2] if i >= 2 else ''):
                 self._add(file_path, "SONAR_THREADLOCAL_NONSTATIC_ELEVEN",
                           "S2441: ThreadLocal 应声明为 static",
-                          _sq_severity("MAJOR"), line=i)
+                          sq_severity("MAJOR"), line=i)
