@@ -1,6 +1,7 @@
 """命令行入口 — 参数解析与执行编排"""
 import argparse
 import os
+import sys
 
 from java_inspector.config import InspectionConfig
 from java_inspector.inspector import JavaCodeInspector
@@ -29,6 +30,10 @@ def main():
         "--ci-cd", action="store_true", help="CI/CD模式，会返回适当的退出代码"
     )
     parser.add_argument("--install-hook", action="store_true", help="安装Git预提交钩子")
+    parser.add_argument(
+        "--workers", "-w", type=int, default=None,
+        help="并行检查的线程数（默认自动检测）"
+    )
 
     args = parser.parse_args()
 
@@ -55,13 +60,13 @@ def main():
         issues = inspector.inspect_file(args.path)
         issues_by_file = {args.path: issues}
     elif os.path.isdir(args.path):
-        issues_by_file = inspector.inspect_directory(args.path)
+        issues_by_file = inspector.inspect_directory(args.path, max_workers=args.workers)
         if not issues_by_file:
             print(f"警告: 目录 '{args.path}' 中没有找到Java文件")
             return
     else:
         print(f"错误: 路径不存在: {args.path}")
-        return
+        sys.exit(1)
 
     report = reporter.generate_report(
         issues_by_file, ReportFormat(args.format), args.output
@@ -72,4 +77,4 @@ def main():
 
     if args.ci_cd:
         ci_cd.check_quality_gate(issues_by_file)
-        exit(ci_cd.get_exit_code())
+        sys.exit(ci_cd.get_exit_code())

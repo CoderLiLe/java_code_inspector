@@ -7,3 +7,24 @@ from java_inspector.ci_cd import CICDIntegrator
 from java_inspector.hooks import install_git_hook
 from java_inspector.cli import main
 from java_inspector.alibaba_rules import AlibabaRulesChecker
+from java_inspector.sonarqube import (
+    SonarQubeChecker,
+    SonarQubeCheckerExt,
+    SonarQubeCheckerFull,
+    SonarQubeCheckerFourth,
+    SonarQubeCheckerFive,
+    SonarQubeCheckerSix,
+    SonarQubeCheckerSeven,
+    SonarQubeCheckerEight,
+    SonarQubeCheckerNine,
+    SonarQubeCheckerTen,
+    SonarQubeCheckerEleven,
+    SonarQubeCheckerTwelve,
+    SonarQubeCheckerThirteen,
+    SonarQubeCheckerFourteen,
+    SonarQubeCheckerFifteen,
+    SonarQubeCheckerSixteen,
+    SonarQubeCheckerSeventeen,
+    get_checker_classes as get_sonar_checkers,
+)
+from java_inspector.alibaba_rules import get_checker_classes as get_alibaba_checkers

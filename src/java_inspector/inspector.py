@@ -2,7 +2,7 @@
 import hashlib
 import os
 import re
-import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -10,26 +10,8 @@ import javalang
 
 from java_inspector.models import CodeIssue, CodeMetrics, Severity
 from java_inspector.config import InspectionConfig
-from java_inspector.alibaba_rules import AlibabaRulesChecker
-from java_inspector.sonarqube import (
-    SonarQubeChecker,
-    SonarQubeCheckerExt,
-    SonarQubeCheckerFull,
-    SonarQubeCheckerFourth,
-    SonarQubeCheckerFive,
-    SonarQubeCheckerSix,
-    SonarQubeCheckerSeven,
-    SonarQubeCheckerEight,
-    SonarQubeCheckerNine,
-    SonarQubeCheckerTen,
-    SonarQubeCheckerEleven,
-    SonarQubeCheckerTwelve,
-    SonarQubeCheckerThirteen,
-    SonarQubeCheckerFourteen,
-    SonarQubeCheckerFifteen,
-    SonarQubeCheckerSixteen,
-    SonarQubeCheckerSeventeen,
-)
+from java_inspector.alibaba_rules import get_checker_classes as get_alibaba_checkers
+from java_inspector.sonarqube import get_checker_classes as get_sonar_checkers
 
 
 class JavaCodeInspector:
@@ -37,7 +19,23 @@ class JavaCodeInspector:
         self.issues: List[CodeIssue] = []
         self.metrics: Dict[str, CodeMetrics] = {}
         self.config = config or InspectionConfig()
-        self.duplicate_blocks: Dict[str, List[Tuple[int, int]]] = {}
+        self._sonar_checkers = None
+        self._alibaba_checkers = None
+
+    def _init_checkers(self):
+        if self._sonar_checkers is None:
+            cls_list = get_sonar_checkers() if callable(get_sonar_checkers) else []
+            self._sonar_checkers = [cls(self.config, self.issues) for cls in cls_list]
+        if self._alibaba_checkers is None:
+            cls_list = get_alibaba_checkers() if callable(get_alibaba_checkers) else []
+            self._alibaba_checkers = [cls(self.config, self.issues) for cls in cls_list]
+
+    def _run_all_checkers(self, tree, file_path: str, content: str):
+        self._init_checkers()
+        for checker in self._alibaba_checkers:
+            checker.run_all(tree, file_path, content)
+        for checker in self._sonar_checkers:
+            checker.run_all(tree, file_path, content)
 
     def inspect_file(self, file_path: str) -> List[CodeIssue]:
         self.issues.clear()
@@ -57,24 +55,7 @@ class JavaCodeInspector:
             self._check_empty_methods(tree, file_path)
             self._check_exception_handling(tree, file_path, content)
             self._check_magic_numbers(tree, file_path, content)
-            AlibabaRulesChecker(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeChecker(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerExt(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerFull(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerFourth(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerFive(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerSix(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerSeven(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerEight(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerNine(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerTen(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerEleven(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerTwelve(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerThirteen(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerFourteen(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerFifteen(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerSixteen(self.config, self.issues).run_all(tree, file_path, content)
-            SonarQubeCheckerSeventeen(self.config, self.issues).run_all(tree, file_path, content)
+            self._run_all_checkers(tree, file_path, content)
 
             self._calculate_metrics(tree, file_path, content)
 
@@ -93,22 +74,51 @@ class JavaCodeInspector:
 
         return self.issues
 
-    def inspect_directory(self, directory_path: str) -> Dict[str, List[CodeIssue]]:
-        results = {}
-
-        if self.config.is_rule_enabled("duplicate_code"):
-            self._check_duplicate_code(directory_path)
-
+    def inspect_directory(self, directory_path: str, max_workers: int = None) -> Dict[str, List[CodeIssue]]:
+        java_files = []
         for root, _, files in os.walk(directory_path):
             for file in files:
                 if file.endswith(".java"):
                     file_path = os.path.join(root, file)
-                    if self._is_excluded(file_path):
-                        continue
-                    issues = self.inspect_file(file_path)
-                    results[file_path] = list(issues)
+                    if not self._is_excluded(file_path):
+                        java_files.append(file_path)
+
+        if not java_files:
+            return {}
+
+        if self.config.is_rule_enabled("duplicate_code"):
+            self._check_duplicate_code_from_files(java_files)
+
+        if max_workers is None:
+            max_workers = min(os.cpu_count() or 4, 8)
+
+        results = {}
+        if max_workers > 1 and len(java_files) > 1:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(self._inspect_single_file, fp): fp for fp in java_files}
+                for future in as_completed(futures):
+                    fp = futures[future]
+                    try:
+                        results[fp] = future.result()
+                    except Exception as e:
+                        results[fp] = [
+                            CodeIssue(
+                                file_path=fp, line=0, column=0,
+                                message=f"检查失败: {str(e)}",
+                                severity=Severity.ERROR,
+                                rule_id="INSPECT_ERROR",
+                                category="PARSING",
+                            )
+                        ]
+        else:
+            for fp in java_files:
+                results[fp] = self._inspect_single_file(fp)
 
         return results
+
+    def _inspect_single_file(self, file_path: str) -> List[CodeIssue]:
+        inspector = JavaCodeInspector(self.config)
+        return inspector.inspect_file(file_path)
 
     def _is_excluded(self, file_path: str) -> bool:
         for pattern in self.config.config["exclude_patterns"]:
@@ -285,6 +295,18 @@ class JavaCodeInspector:
                     )
                 )
 
+    # 常见 AST 节点类型用于圈复杂度计算
+    _BRANCH_NODES = (
+        javalang.tree.IfStatement,
+        javalang.tree.WhileStatement,
+        javalang.tree.ForStatement,
+    )
+    _CYCLO_NODES = _BRANCH_NODES + (
+        javalang.tree.SwitchStatement,
+        javalang.tree.CatchClause,
+        javalang.tree.TernaryExpression,
+    )
+
     def _check_method_complexity(self, tree, file_path: str, content: str):
         max_method = self.config.get_rule_config("method_complexity").get(
             "max_complexity", 10
@@ -303,26 +325,9 @@ class JavaCodeInspector:
 
             def walk(node, _branch_count, _cyclo):
                 try:
-                    if isinstance(
-                        node,
-                        (
-                            javalang.tree.IfStatement,
-                            javalang.tree.WhileStatement,
-                            javalang.tree.ForStatement,
-                        ),
-                    ):
+                    if isinstance(node, self._BRANCH_NODES):
                         _branch_count += 1
-                    if isinstance(
-                        node,
-                        (
-                            javalang.tree.IfStatement,
-                            javalang.tree.WhileStatement,
-                            javalang.tree.ForStatement,
-                            javalang.tree.SwitchStatement,
-                            javalang.tree.CatchClause,
-                            javalang.tree.TernaryExpression,
-                        ),
-                    ):
+                    if isinstance(node, self._CYCLO_NODES):
                         _cyclo += 1
                     children = getattr(node, "children", None) or []
                     for child in children:
@@ -482,59 +487,74 @@ class JavaCodeInspector:
                 )
             )
 
+    # 常见的非魔法数字模式（不需要标记为魔法数字）
+    _MAGIC_NUMBER_SKIP = frozenset({"0", "1", "-1", "0.0", "1.0", "2", "-1.0"})
+
     def _check_magic_numbers(self, tree, file_path: str, content: str):
         if not self.config.is_rule_enabled("magic_numbers"):
             return
 
-        magic_number_pattern = r"\b([0-9]{2,}|[0-9]\.[0-9]+)\b"
         lines = content.split("\n")
+        in_block_comment = False
 
         for i, line in enumerate(lines, 1):
-            numbers = re.findall(magic_number_pattern, line)
+            stripped = line.strip()
+
+            # 跳过注释行
+            if stripped.startswith("//"):
+                continue
+            if stripped.startswith("/*") or stripped.startswith("*"):
+                in_block_comment = True
+            if in_block_comment:
+                if "*/" in stripped:
+                    in_block_comment = False
+                continue
+            if stripped.startswith("import ") or stripped.startswith("package "):
+                continue
+
+            # 移除字符串字面量中的内容再匹配
+            cleaned = re.sub(r'"[^"]*"', "", line)
+
+            numbers = re.findall(r"\b([0-9]{2,}|[0-9]\.[0-9]+)\b", cleaned)
             for number in numbers:
-                if number not in ["0", "1", "-1", "0.0", "1.0"]:
-                    self.issues.append(
-                        CodeIssue(
-                            file_path=file_path,
-                            line=i,
-                            column=line.find(number),
-                            message=f"魔法数字: {number}，建议定义为常量",
-                            severity=Severity.INFO,
-                            rule_id="MAGIC_NUMBER",
-                            category="STYLE",
-                            fixable=True,
-                            fix_suggestion=(
-                                f"定义常量: public static final int"
-                                f" NUMBER_{number} = {number};"
-                            ),
-                        )
+                if number in self._MAGIC_NUMBER_SKIP:
+                    continue
+                col = cleaned.find(number)
+                if col < 0:
+                    continue
+                self.issues.append(
+                    CodeIssue(
+                        file_path=file_path,
+                        line=i,
+                        column=col,
+                        message=f"魔法数字: {number}，建议定义为常量",
+                        severity=Severity.INFO,
+                        rule_id="MAGIC_NUMBER",
+                        category="STYLE",
+                        fixable=True,
+                        fix_suggestion=(
+                            f"定义常量: public static final int"
+                            f" NUMBER_{number.replace('.', '_')} = {number};"
+                        ),
                     )
+                )
 
     def _check_duplicate_code(self, directory_path: str):
         if not self.config.is_rule_enabled("duplicate_code"):
             return
 
+        java_files = []
+        for root, _, files in os.walk(directory_path):
+            for file in files:
+                if file.endswith(".java") and not self._is_excluded(
+                    os.path.join(root, file)
+                ):
+                    java_files.append(os.path.join(root, file))
+
         min_tokens = self.config.get_rule_config("duplicate_code").get("min_tokens", 50)
+        self._check_duplicate_code_from_files(java_files, min_tokens)
 
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
-            tmp_path = tmp.name
-
-        try:
-            java_files = []
-            for root, _, files in os.walk(directory_path):
-                for file in files:
-                    if file.endswith(".java") and not self._is_excluded(
-                        os.path.join(root, file)
-                    ):
-                        java_files.append(os.path.join(root, file))
-
-            self._simple_duplicate_detection(java_files, min_tokens)
-
-        finally:
-            if os.path.exists(tmp_path):
-                os.unlink(tmp_path)
-
-    def _simple_duplicate_detection(self, java_files: List[str], min_tokens: int):
+    def _check_duplicate_code_from_files(self, java_files: List[str], min_tokens: int = 50):
         code_blocks = {}
 
         for file_path in java_files:

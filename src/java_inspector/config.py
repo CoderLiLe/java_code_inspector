@@ -1,8 +1,11 @@
-"""配置管理 — 加载合并 JSON 配置与默认值"""
+"""配置管理 — 加载合并 JSON 配置与默认值，支持环境变量覆盖"""
 import copy
 import json
 import os
 from typing import Dict
+
+
+_ENV_PREFIX = "JAVA_INSPECTOR_"
 
 
 class InspectionConfig:
@@ -109,6 +112,7 @@ class InspectionConfig:
         self.config = copy.deepcopy(self.default_config)
         if config_file and os.path.exists(config_file):
             self.load_config(config_file)
+        self._apply_env_overrides()
 
     def load_config(self, config_file: str):
         try:
@@ -118,12 +122,47 @@ class InspectionConfig:
         except Exception as e:
             print(f"加载配置文件失败: {e}")
 
-    def _deep_update(self, base: Dict, update: Dict):
+    @staticmethod
+    def _deep_update(base: Dict, update: Dict):
         for key, value in update.items():
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                self._deep_update(base[key], value)
+                InspectionConfig._deep_update(base[key], value)
             else:
                 base[key] = value
+
+    def _apply_env_overrides(self):
+        for env_key, env_val in os.environ.items():
+            if not env_key.startswith(_ENV_PREFIX):
+                continue
+            config_path = env_key[len(_ENV_PREFIX):].lower()
+            parts = config_path.split("__")
+
+            # 沿 parts 路径深入配置字典
+            target = self.config
+            for i, part in enumerate(parts[:-1]):
+                if part in target and isinstance(target[part], dict):
+                    target = target[part]
+                else:
+                    target = None
+                    break
+
+            if target is not None and parts[-1] in target:
+                target[parts[-1]] = self._parse_env_value(env_val)
+
+    @staticmethod
+    def _parse_env_value(val: str):
+        lower = val.lower()
+        if lower in ("true", "yes", "1"):
+            return True
+        if lower in ("false", "no", "0"):
+            return False
+        try:
+            return int(val)
+        except ValueError:
+            try:
+                return float(val)
+            except ValueError:
+                return val
 
     def is_rule_enabled(self, rule_id: str) -> bool:
         return self.config["rules"].get(rule_id, {}).get("enabled", False)

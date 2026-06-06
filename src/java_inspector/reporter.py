@@ -233,7 +233,8 @@ class InspectionReporter:
         csv_content = ",".join(headers) + "\n"
         for row in csv_data:
             escaped_row = [
-                f'"{cell}"' if "," in str(cell) else str(cell) for cell in row
+                f'"{cell}"' if any(c in str(cell) for c in ',"\n') else str(cell)
+                for cell in row
             ]
             csv_content += ",".join(escaped_row) + "\n"
 

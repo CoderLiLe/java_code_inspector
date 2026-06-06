@@ -1,5 +1,5 @@
 """数据模型 — CodeIssue、CodeMetrics 等核心类型定义"""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -30,13 +30,13 @@ class CodeIssue:
     fix_suggestion: str = ""
 
 
+@dataclass
 class CodeMetrics:
-    def __init__(self):
-        self.total_lines: int = 0
-        self.code_lines: int = 0
-        self.comment_lines: int = 0
-        self.method_count: int = 0
-        self.class_count: int = 0
-        self.cyclomatic_complexity: int = 0
-        self.duplication_rate: float = 0.0
-        self.code_smells: int = 0
+    total_lines: int = 0
+    code_lines: int = 0
+    comment_lines: int = 0
+    method_count: int = 0
+    class_count: int = 0
+    cyclomatic_complexity: int = 0
+    duplication_rate: float = 0.0
+    code_smells: int = 0

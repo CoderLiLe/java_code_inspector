@@ -48,6 +48,11 @@ checker_classes = [
 ]
 
 
+def get_checker_classes():
+    """返回所有阿里规约检查器类的列表"""
+    return list(checker_classes)
+
+
 class AlibabaRulesChecker:
     def __init__(self, config: InspectionConfig, issues: List[CodeIssue]):
         self.config = config
@@ -56,31 +61,4 @@ class AlibabaRulesChecker:
 
     def run_all(self, tree, file_path: str, content: str):
         for checker in self.checkers:
-            method_name = self._get_method_name(checker)
-            getattr(checker, method_name)(tree, file_path, content)
-
-    @staticmethod
-    def _get_method_name(checker):
-        cls_name = type(checker).__name__
-        mapping = {
-            "NamingChecker": "check_naming",
-            "ConstantChecker": "check_constant",
-            "CodeStyleChecker": "check_code_style",
-            "OopChecker": "check_oop",
-            "DateChecker": "check_date",
-            "CollectionChecker": "check_collection",
-            "ControlChecker": "check_control",
-            "ConcurrencyChecker": "check_concurrency",
-            "CommentChecker": "check_comment",
-            "ExceptionChecker": "check_exception",
-            "LoggingChecker": "check_logging",
-            "OtherChecker": "check_other",
-            "MethodLengthChecker": "check_method_length",
-            "FrontendBackendChecker": "check_frontend_backend",
-            "SecurityChecker": "check_security",
-            "SqlChecker": "check_sql",
-            "UnitTestChecker": "check_unit_test",
-            "EngineeringChecker": "check_engineering",
-            "DesignChecker": "check_design",
-        }
-        return mapping.get(cls_name, "")
+            checker.run_all(tree, file_path, content)

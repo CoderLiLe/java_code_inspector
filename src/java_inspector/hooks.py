@@ -7,7 +7,7 @@ def install_git_hook():
     hook_content = """#!/bin/bash
 # Java代码检查Git钩子
 echo "运行Java代码检查..."
-python java_inspector.py --ci-cd
+python -m java_inspector . --ci-cd
 if [ $? -ne 0 ]; then
     echo "代码检查失败，请修复问题后再提交"
     exit 1

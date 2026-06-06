@@ -649,7 +649,7 @@ class OopChecker(BaseChecker):
             if isinstance(node, javalang.tree.FieldDeclaration):
                 mods = node.modifiers or []
                 if not any(m in mods for m in ("private", "public", "protected")) and \
-                   not any("static" in mods and "final" in mods):
+                   not ("static" in mods and "final" in mods):
                     for decl in node.declarators:
                         if not decl.name.startswith("serialVersionUID"):
                             l, c = self._pos(decl)
